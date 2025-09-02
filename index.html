@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Generator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+        #prompt {
+            width: 100%;
+            height: 100px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        #prompt:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .reset-section {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .reset-btn {
+            padding: 8px 16px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        .reset-btn:hover {
+            opacity: 1;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .start-blender-btn {
+            flex: 1;
+            padding: 15px;
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .start-blender-btn:hover {
+            transform: translateY(-2px);
+        }
+        .start-blender-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .generate-btn {
+            flex: 2;
+            padding: 15px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .generate-btn:hover {
+            transform: translateY(-2px);
+        }
+        .generate-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.loading {
+            background: #cce7ff;
+            color: #004085;
+            border: 1px solid #b8daff;
+        }
+        .examples {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .examples h3 {
+            margin-top: 0;
+            color: #555;
+        }
+        .example-prompt {
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 1px solid #ddd;
+            transition: background-color 0.2s;
+        }
+        .example-prompt:hover {
+            background: #e9ecef;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎭 AI Character Generator</h1>
+        
+        <div class="input-group">
+            <label for="prompt">Describe your character:</label>
+            <textarea id="prompt" placeholder="e.g., Generate an intelligent looking man with sharp features"></textarea>
+        </div>
+        
+        <div class="button-group">
+            <button class="start-blender-btn" onclick="startBlender()">
+                🚀 Start Blender
+            </button>
+            <button class="generate-btn" onclick="generateCharacter()">
+                Generate Character
+            </button>
+        </div>
+        
+        <div class="reset-section">
+            <button class="reset-btn" onclick="resetStatus()" title="Reset if you're having connection issues">
+                🔄 Reset Connection
+            </button>
+        </div>
+        
+        <div id="status"></div>
+        
+        <div class="examples">
+            <h3>💡 Example Prompts (click to use):</h3>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate an intelligent looking man with sharp features</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create a wise old wizard with a long beard</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Make a strong athletic woman warrior</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate a gentle kind teacher</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create a fierce looking elf with pointed ears</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Make a young Asian man with small eyes and full lips</div>
+        </div>
+    </div>
+
+    <script>
+        function setPrompt(text) {
+            document.getElementById('prompt').value = text;
+        }
+        
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+        }
+        
+        async function resetStatus() {
+            try {
+                const response = await fetch('/reset-status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showStatus('🔄 Connection reset. You can start Blender again.', 'success');
+                    // Reset button states
+                    document.querySelector('.start-blender-btn').innerHTML = '🚀 Start Blender';
+                    document.querySelector('.start-blender-btn').disabled = false;
+                    document.querySelector('.generate-btn').disabled = true;
+                } else {
+                    showStatus('❌ Failed to reset connection', 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ Reset failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function startBlender() {
+            const button = document.querySelector('.start-blender-btn');
+            
+            button.disabled = true;
+            button.innerHTML = '<span class="loading-spinner"></span> Starting Blender...';
+            showStatus('Starting Blender with your model file...', 'loading');
+            
+            try {
+                const response = await fetch('/start-blender', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showStatus(`✅ ${data.message}`, 'success');
+                    button.innerHTML = '✅ Blender Running';
+                    setTimeout(() => checkBlenderStatus(), 2000);
+                } else {
+                    showStatus(`❌ ${data.error}`, 'error');
+                    button.disabled = false;
+                    button.innerHTML = '🚀 Start Blender';
+                }
+            } catch (error) {
+                showStatus(`❌ Failed to start Blender: ${error.message}`, 'error');
+                button.disabled = false;
+                button.innerHTML = '🚀 Start Blender';
+            }
+        }
+        
+        async function checkBlenderStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                const blenderBtn = document.querySelector('.start-blender-btn');
+                const generateBtn = document.querySelector('.generate-btn');
+                
+                if (data.blender_started_once) {
+                    // Once Blender has been started, keep generate button enabled
+                    blenderBtn.innerHTML = '✅ Blender Running';
+                    blenderBtn.disabled = true;
+                    generateBtn.disabled = false;
+                } else {
+                    blenderBtn.innerHTML = '🚀 Start Blender';
+                    blenderBtn.disabled = false;
+                    generateBtn.disabled = true;
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+                // On error, be permissive - don't disable buttons
+            }
+        }
+        
+        async function generateCharacter() {
+            const prompt = document.getElementById('prompt').value.trim();
+            const button = document.querySelector('.generate-btn');
+            
+            if (!prompt) {
+                showStatus('Please enter a character description.', 'error');
+                return;
+            }
+            
+            // Disable button and show loading
+            button.disabled = true;
+            button.innerHTML = '<span class="loading-spinner"></span> Generating...';
+            showStatus('Sending request to Blender...', 'loading');
+            
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({prompt: prompt})
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showStatus(`✅ ${data.message}`, 'success');
+                } else {
+                    showStatus(`❌ ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ Connection error: ${error.message}`, 'error');
+            } finally {
+                // Re-enable button
+                button.disabled = false;
+                button.innerHTML = 'Generate Character';
+            }
+        }
+        
+        // Check Blender status on page load
+        window.onload = function() {
+            checkBlenderStatus();
+            // Check status periodically
+            setInterval(checkBlenderStatus, 5000);
+        };
+    </script>
+</body>
+</html>
