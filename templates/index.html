@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Character Generator</title>
+    <title>Enhanced Character Generator</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -22,7 +22,13 @@
         h1 {
             text-align: center;
             color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
             margin-bottom: 30px;
+            font-style: italic;
         }
         .input-group {
             margin-bottom: 20px;
@@ -35,17 +41,43 @@
         }
         #prompt {
             width: 100%;
-            height: 100px;
+            height: 120px;
             padding: 15px;
             border: 2px solid #ddd;
             border-radius: 8px;
             font-size: 16px;
             resize: vertical;
             box-sizing: border-box;
+            font-family: inherit;
         }
         #prompt:focus {
             outline: none;
             border-color: #667eea;
+        }
+        .system-status {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .status-good {
+            color: #28a745;
+            font-weight: 600;
+        }
+        .status-warning {
+            color: #ffc107;
+            font-weight: 600;
+        }
+        .status-bad {
+            color: #dc3545;
+            font-weight: 600;
         }
         .reset-section {
             text-align: center;
@@ -131,6 +163,11 @@
             color: #004085;
             border: 1px solid #b8daff;
         }
+        .status.info {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
         .examples {
             margin-top: 30px;
             padding: 20px;
@@ -143,15 +180,18 @@
         }
         .example-prompt {
             background: white;
-            padding: 10px;
-            margin: 5px 0;
+            padding: 12px;
+            margin: 8px 0;
             border-radius: 5px;
             cursor: pointer;
             border: 1px solid #ddd;
-            transition: background-color 0.2s;
+            transition: all 0.2s;
+            font-size: 14px;
+            line-height: 1.4;
         }
         .example-prompt:hover {
             background: #e9ecef;
+            border-color: #667eea;
         }
         .loading-spinner {
             display: inline-block;
@@ -166,15 +206,46 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .analysis-result {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #17a2b8;
+        }
+        .analysis-result h4 {
+            margin-top: 0;
+            color: #17a2b8;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎭 AI Character Generator</h1>
+        <h1>🎭 Enhanced AI Character Generator</h1>
+        <div class="subtitle">Powered by NLP + Mistral LLM + Blender</div>
+        
+        <div class="system-status" id="systemStatus">
+            <div class="status-item">
+                <span>Blender Status:</span>
+                <span id="blenderStatus" class="status-bad">Not Connected</span>
+            </div>
+            <div class="status-item">
+                <span>Properties Loaded:</span>
+                <span id="propertiesStatus" class="status-bad">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span>LLM Status:</span>
+                <span id="llmStatus" class="status-bad">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span>NLP Status:</span>
+                <span id="nlpStatus" class="status-bad">Checking...</span>
+            </div>
+        </div>
         
         <div class="input-group">
-            <label for="prompt">Describe your character:</label>
-            <textarea id="prompt" placeholder="e.g., Generate an intelligent looking man with sharp features"></textarea>
+            <label for="prompt">Describe your character in detail (8-10 lines recommended):</label>
+            <textarea id="prompt" placeholder="e.g., Create a tall, athletic Chinese man in his late 20s with sharp facial features, high cheekbones, a strong jawline, and intelligent eyes. He has a fit build from regular exercise and a confident posture. His black hair is neatly styled, and he has a slight tan from outdoor activities. He works as a software engineer but maintains an active lifestyle with hiking and martial arts."></textarea>
         </div>
         
         <div class="button-group">
@@ -182,7 +253,7 @@
                 🚀 Start Blender
             </button>
             <button class="generate-btn" onclick="generateCharacter()">
-                Generate Character
+                🎨 Generate Character
             </button>
         </div>
         
@@ -193,15 +264,15 @@
         </div>
         
         <div id="status"></div>
+        <div id="analysisResult" class="analysis-result" style="display: none;"></div>
         
         <div class="examples">
             <h3>💡 Example Prompts (click to use):</h3>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate an intelligent looking man with sharp features</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create a wise old wizard with a long beard</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Make a strong athletic woman warrior</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate a gentle kind teacher</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create a fierce looking elf with pointed ears</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Make a young Asian man with small eyes and full lips</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate an elderly wise Indian scholar with a long white beard, deep thoughtful eyes, and a gentle smile. He has a slightly stooped posture from years of reading and a warm, grandfatherly appearance.</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create a muscular African athlete in his prime with broad shoulders, a powerful build, and an energetic presence. He has a wide nose, full lips, and a confident, competitive expression.</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Make a young Japanese office worker with a slim build, neat appearance, and professional demeanor. He has straight black hair, monolid eyes, and a reserved but friendly expression.</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate a middle-aged European chef with a round face, cheerful expression, and a bit of a belly from tasting his own cooking. He has kind eyes, a warm smile, and slightly flushed cheeks.</div>
+            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create a fierce Nordic warrior with sharp angular features, piercing blue eyes, and a strong jaw. He has blonde hair, fair skin with some scars, and a muscular build from constant training.</div>
         </div>
     </div>
 
@@ -215,6 +286,70 @@
             statusDiv.innerHTML = message;
             statusDiv.className = `status ${type}`;
             statusDiv.style.display = 'block';
+            
+            // Hide analysis result when showing new status
+            document.getElementById('analysisResult').style.display = 'none';
+        }
+        
+        function showAnalysis(analysis) {
+            const analysisDiv = document.getElementById('analysisResult');
+            let html = '<h4>🧠 Analysis Results:</h4>';
+            
+            if (analysis.llm_analysis) {
+                html += `<p><strong>LLM Analysis:</strong> ${analysis.llm_analysis}</p>`;
+            }
+            
+            if (analysis.property_count) {
+                html += `<p><strong>Properties Applied:</strong> ${analysis.property_count}</p>`;
+            }
+            
+            analysisDiv.innerHTML = html;
+            analysisDiv.style.display = 'block';
+        }
+        
+        async function updateSystemStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                // Update status indicators
+                document.getElementById('blenderStatus').textContent = 
+                    data.blender_running ? '✅ Connected' : '❌ Not Connected';
+                document.getElementById('blenderStatus').className = 
+                    data.blender_running ? 'status-good' : 'status-bad';
+                
+                document.getElementById('propertiesStatus').textContent = 
+                    data.properties_loaded ? `✅ ${data.properties_loaded ? 'Loaded' : 'Ready'}` : '❌ Not Loaded';
+                document.getElementById('propertiesStatus').className = 
+                    data.properties_loaded ? 'status-good' : 'status-bad';
+                
+                document.getElementById('llmStatus').textContent = 
+                    data.llm_available ? '✅ Available' : '❌ Not Available';
+                document.getElementById('llmStatus').className = 
+                    data.llm_available ? 'status-good' : 'status-warning';
+                
+                document.getElementById('nlpStatus').textContent = 
+                    data.nlp_available ? '✅ Available' : '❌ Not Available';
+                document.getElementById('nlpStatus').className = 
+                    data.nlp_available ? 'status-good' : 'status-warning';
+                
+                // Update buttons
+                const blenderBtn = document.querySelector('.start-blender-btn');
+                const generateBtn = document.querySelector('.generate-btn');
+                
+                if (data.blender_started_once) {
+                    blenderBtn.innerHTML = '✅ Blender Running';
+                    blenderBtn.disabled = true;
+                    generateBtn.disabled = false;
+                } else {
+                    blenderBtn.innerHTML = '🚀 Start Blender';
+                    blenderBtn.disabled = false;
+                    generateBtn.disabled = true;
+                }
+                
+            } catch (error) {
+                console.error('Status update failed:', error);
+            }
         }
         
         async function resetStatus() {
@@ -230,10 +365,7 @@
                 
                 if (response.ok) {
                     showStatus('🔄 Connection reset. You can start Blender again.', 'success');
-                    // Reset button states
-                    document.querySelector('.start-blender-btn').innerHTML = '🚀 Start Blender';
-                    document.querySelector('.start-blender-btn').disabled = false;
-                    document.querySelector('.generate-btn').disabled = true;
+                    await updateSystemStatus();
                 } else {
                     showStatus('❌ Failed to reset connection', 'error');
                 }
@@ -261,8 +393,7 @@
                 
                 if (response.ok) {
                     showStatus(`✅ ${data.message}`, 'success');
-                    button.innerHTML = '✅ Blender Running';
-                    setTimeout(() => checkBlenderStatus(), 2000);
+                    setTimeout(() => updateSystemStatus(), 2000);
                 } else {
                     showStatus(`❌ ${data.error}`, 'error');
                     button.disabled = false;
@@ -275,30 +406,6 @@
             }
         }
         
-        async function checkBlenderStatus() {
-            try {
-                const response = await fetch('/status');
-                const data = await response.json();
-                
-                const blenderBtn = document.querySelector('.start-blender-btn');
-                const generateBtn = document.querySelector('.generate-btn');
-                
-                if (data.blender_started_once) {
-                    // Once Blender has been started, keep generate button enabled
-                    blenderBtn.innerHTML = '✅ Blender Running';
-                    blenderBtn.disabled = true;
-                    generateBtn.disabled = false;
-                } else {
-                    blenderBtn.innerHTML = '🚀 Start Blender';
-                    blenderBtn.disabled = false;
-                    generateBtn.disabled = true;
-                }
-            } catch (error) {
-                console.error('Status check failed:', error);
-                // On error, be permissive - don't disable buttons
-            }
-        }
-        
         async function generateCharacter() {
             const prompt = document.getElementById('prompt').value.trim();
             const button = document.querySelector('.generate-btn');
@@ -308,10 +415,15 @@
                 return;
             }
             
-            // Disable button and show loading
+            if (prompt.split(' ').length < 10) {
+                if (!confirm('Your description is quite short. For best results, provide 8-10 lines of detailed description. Continue anyway?')) {
+                    return;
+                }
+            }
+            
             button.disabled = true;
-            button.innerHTML = '<span class="loading-spinner"></span> Generating...';
-            showStatus('Sending request to Blender...', 'loading');
+            button.innerHTML = '<span class="loading-spinner"></span> Analyzing & Generating...';
+            showStatus('🔍 Analyzing with NLP... 🧠 Enhancing with LLM...', 'loading');
             
             try {
                 const response = await fetch('/generate', {
@@ -326,23 +438,24 @@
                 
                 if (response.ok) {
                     showStatus(`✅ ${data.message}`, 'success');
+                    if (data.llm_analysis || data.property_count) {
+                        showAnalysis(data);
+                    }
                 } else {
                     showStatus(`❌ ${data.error}`, 'error');
                 }
             } catch (error) {
                 showStatus(`❌ Connection error: ${error.message}`, 'error');
             } finally {
-                // Re-enable button
                 button.disabled = false;
-                button.innerHTML = 'Generate Character';
+                button.innerHTML = '🎨 Generate Character';
             }
         }
         
-        // Check Blender status on page load
+        // Initialize system status and set up periodic updates
         window.onload = function() {
-            checkBlenderStatus();
-            // Check status periodically
-            setInterval(checkBlenderStatus, 5000);
+            updateSystemStatus();
+            setInterval(updateSystemStatus, 5000);
         };
     </script>
 </body>
