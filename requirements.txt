@@ -1,0 +1,22 @@
+# Core web framework
+flask==2.3.3
+
+# Machine Learning & NLP
+torch==2.0.1
+transformers==4.31.0
+spacy==3.6.1
+pandas==2.0.3
+numpy==1.24.3
+
+# Additional dependencies for specific models
+accelerate==0.21.0
+safetensors==0.3.1
+
+# For file operations and utilities
+requests==2.31.0
+python-dateutil==2.8.2
+pathlib2==2.3.7.post1; python_version < "3.4"
+
+# Development and debugging
+ipython==8.14.0
+jupyter==1.0.0
