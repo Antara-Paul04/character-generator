@@ -60,8 +60,12 @@ class CharacterPropertyAnalyzer:
         self.properties = properties_list
         self.nlp = nlp
         
-        # Enhanced feature mapping with cultural and lifestyle context
+        # Enhanced feature mapping with cultural and gender context
         self.feature_keywords = {
+            # Gender detection
+            'female': ['female', 'woman', 'girl', 'lady', 'feminine', 'she', 'her'],
+            'male': ['male', 'man', 'boy', 'guy', 'masculine', 'he', 'him'],
+            
             # Direct physical features
             'big_eyes': ['big eyes', 'large eyes', 'wide eyes', 'expressive eyes', 'doe eyes'],
             'small_eyes': ['small eyes', 'narrow eyes', 'squinty eyes', 'beady eyes'],
@@ -84,13 +88,13 @@ class CharacterPropertyAnalyzer:
             # Body type features
             'muscular_body': ['muscular', 'athletic', 'toned', 'fit', 'built', 'ripped'],
             'slim_body': ['slim', 'thin', 'lean', 'slender', 'willowy'],
-            'large_body': ['large', 'big', 'heavy', 'stocky', 'burly', 'husky'],
+            'large_body': ['large', 'big', 'heavy', 'stocky', 'burly', 'husky', 'wide belly', 'big belly'],
             'tall': ['tall', 'height'],
             'short': ['short', 'small stature', 'petite'],
             
             # Age features
             'young': ['young', 'youthful', 'boyish', 'girlish', 'teenage'],
-            'old': ['old', 'aged', 'elderly', 'wrinkled', 'senior'],
+            'old': ['old', 'aged', 'elderly', 'wrinkled', 'senior', 'aged skin'],
             
             # Cultural/ethnic indicators
             'caucasian': ['caucasian', 'white', 'european', 'western'],
@@ -99,66 +103,85 @@ class CharacterPropertyAnalyzer:
             'indian': ['indian', 'south asian', 'desi'],
             'middle_eastern': ['middle eastern', 'arab', 'persian'],
             'latino': ['latino', 'hispanic', 'mexican', 'brazilian'],
+            'latin': ['latin', 'hispanic'],
+            
+            # Fantasy races
+            'elf': ['elf', 'elven', 'pointed ears'],
+            'dwarf': ['dwarf', 'dwarven', 'short stature'],
+            'anime': ['anime', 'cartoon', 'animated'],
             
             # Lifestyle indicators
             'food_lover': ['foody', 'loves food', 'eats a lot', 'big eater', 'enjoys food', 'food lover'],
             'athletic': ['athletic', 'sports', 'works out', 'gym goer', 'fit', 'active lifestyle'],
             'sedentary': ['sedentary', 'desk job', 'office worker', 'sits all day', 'inactive'],
-            'outdoors': ['outdoors', 'nature lover', 'hiker', 'camper', 'outdoor activities'],
-            'intellectual': ['intellectual', 'bookish', 'academic', 'scholar', 'thinker', 'philosopher'],
-            'manual_worker': ['manual labor', 'construction', 'farming', 'physical work', 'blue collar'],
-            'wealthy': ['wealthy', 'rich', 'affluent', 'upper class', 'well-off'],
-            'rural': ['rural', 'countryside', 'village', 'farm', 'agricultural'],
-            'urban': ['urban', 'city', 'metropolitan', 'downtown']
         }
         
-        # Property mapping with intensity
+        # Enhanced property mapping with cultural variants
         self.property_mapping = {
+            # Gender base
+            'female': ['L1_Female'],
+            'male': ['L1_Male'],
+            
+            # Cultural bases
+            'asian': ['L1_Asian'],
+            'african': ['L1_African'], 
+            'caucasian': ['L1_Caucasian'],
+            'latin': ['L1_Latin'],
+            'elf': ['L1_Elf'],
+            'dwarf': ['L1_Dwarf'],
+            'anime': ['L1_Anime'],
+            
             # Eyes
             'big_eyes': ['L2__Eyes_Size_max', 'L2__Eyes_IrisSize_max'],
             'small_eyes': ['L2__Eyes_Size_min', 'L2__Eyes_IrisSize_min'],
             
-            # Nose
-            'sharp_nose': ['L2_Caucasian_Nose_TipSize_min', 'L2_Caucasian_Nose_BridgeSizeX_min'],
-            'wide_nose': ['L2_Caucasian_Nose_BaseSizeX_max', 'L2_Caucasian_Nose_BridgeSizeX_max'],
-            'long_nose': ['L2_Caucasian_Nose_SizeY_max'],
-            'short_nose': ['L2_Caucasian_Nose_SizeY_min'],
+            # Nose - with cultural variants
+            'sharp_nose': [
+                'L2_Caucasian_Nose_TipSize_min', 'L2_Caucasian_Nose_BridgeSizeX_min',
+                'L2_Asian_Nose_TipSize_min', 'L2_Asian_Nose_BridgeSizeX_min',
+                'L2_African_Nose_TipSize_min', 'L2_African_Nose_BridgeSizeX_min'
+            ],
+            'wide_nose': [
+                'L2_Caucasian_Nose_BaseSizeX_max', 'L2_Caucasian_Nose_BridgeSizeX_max',
+                'L2_Asian_Nose_BaseSizeX_max', 'L2_Asian_Nose_BridgeSizeX_max', 
+                'L2_African_Nose_BaseSizeX_max', 'L2_African_Nose_BridgeSizeX_max'
+            ],
+            'long_nose': [
+                'L2_Caucasian_Nose_SizeY_max',
+                'L2_Asian_Nose_SizeY_max',
+                'L2_African_Nose_SizeY_max'
+            ],
+            'short_nose': [
+                'L2_Caucasian_Nose_SizeY_min',
+                'L2_Asian_Nose_SizeY_min', 
+                'L2_African_Nose_SizeY_min'
+            ],
             
             # Lips
-            'full_lips': ['L2_Caucasian_Mouth_UpperlipVolume_max', 'L2_Caucasian_Mouth_LowerlipVolume_max'],
-            'thin_lips': ['L2_Caucasian_Mouth_UpperlipVolume_min', 'L2_Caucasian_Mouth_LowerlipVolume_min'],
-            
-            # Jaw
-            'strong_jaw': ['L2_Caucasian_Jaw_Angle_min', 'L2_Caucasian_Jaw_Prominence_max'],
-            'soft_jaw': ['L2_Caucasian_Jaw_Angle_max', 'L2_Caucasian_Jaw_Prominence_min'],
-            'wide_jaw': ['L2_Caucasian_Jaw_ScaleX_max'],
-            'narrow_jaw': ['L2_Caucasian_Jaw_ScaleX_min'],
-            
-            # Chin
-            'prominent_chin': ['L2_Caucasian_Chin_Prominence_max', 'L2_Caucasian_Chin_SizeZ_max'],
-            'weak_chin': ['L2_Caucasian_Chin_Prominence_min', 'L2_Caucasian_Chin_SizeZ_min'],
-            
-            # Cheeks
-            'high_cheekbones': ['L2_Caucasian_Cheeks_Zygom_max', 'L2_Caucasian_Cheeks_ZygomPosZ_max'],
-            
-            # Face shape
-            'round_face': ['L2_Caucasian_Face_Ellipsoid_max'],
-            'angular_face': ['L2_Caucasian_Face_Triangle_max'],
+            'full_lips': [
+                'L2_Caucasian_Mouth_UpperlipVolume_max', 'L2_Caucasian_Mouth_LowerlipVolume_max',
+                'L2_Asian_Mouth_UpperlipVolume_max', 'L2_Asian_Mouth_LowerlipVolume_max',
+                'L2_African_Mouth_UpperlipVolume_max', 'L2_African_Mouth_LowerlipVolume_max'
+            ],
+            'thin_lips': [
+                'L2_Caucasian_Mouth_UpperlipVolume_min', 'L2_Caucasian_Mouth_LowerlipVolume_min',
+                'L2_Asian_Mouth_UpperlipVolume_min', 'L2_Asian_Mouth_LowerlipVolume_min',
+                'L2_African_Mouth_UpperlipVolume_min', 'L2_African_Mouth_LowerlipVolume_min'
+            ],
             
             # Body type
             'muscular_body': ['L2__Body_Size_max', 'L2__Arms_UpperarmMass-UpperarmTone_max-max'],
             'slim_body': ['L2__Body_Size_min', 'L2__Arms_UpperarmMass-UpperarmTone_min-min'],
-            'large_body': ['L2__Body_Size_max', 'L2__Chest_Girth_max'],
+            'large_body': ['L2__Body_Size_max', 'L2__Stomach_LocalFat_max', 'L2__Abdomen_Mass-Tone_max-max'],
             'tall': ['L2__Body_Size_max'],
             'short': ['L2__Body_Size_min'],
             
-            # Lifestyle traits
+            # Age
+            'old': ['L2_Caucasian_Skin_Wrinkles_max', 'L2_Asian_Skin_Wrinkles_max', 'L2_African_Skin_Wrinkles_max'],
+            'young': ['L2_Caucasian_Skin_Wrinkles_min', 'L2_Asian_Skin_Wrinkles_min', 'L2_African_Skin_Wrinkles_min'],
+            
+            # Lifestyle
             'food_lover': ['L2__Stomach_LocalFat_max', 'L2__Abdomen_Mass-Tone_max-max', 'L2__Body_Size_max'],
-            'sedentary': ['L2__Stomach_LocalFat_max', 'L2__Body_Size_max', 'L2__Abdomen_Mass-Tone_max-max'],
-            'manual_worker': ['L2__Arms_UpperarmMass-UpperarmTone_max-max', 'L2__Hands_Mass-Tone_max-max', 'L2__Shoulders_Mass-Tone_max-max'],
-            'wealthy': ['L2__Body_Size_min', 'L2_Caucasian_Skin_Complexion_max'],
-            'rural': ['L2_Caucasian_Skin_Freckles_max', 'L2__Body_Size_max', 'L2__Hands_Mass-Tone_max-max'],
-            'urban': ['L2__Body_Size_min', 'L2_Caucasian_Skin_Complexion_min']
         }
         
         # Intensity modifiers
@@ -223,10 +246,31 @@ class CharacterPropertyAnalyzer:
         
         print(f"✓ NLP Analysis - Detected {len(features)} features: {list(features.keys())}")
         
+        # Determine cultural context for property selection
+        cultural_context = None
+        for culture in ['asian', 'african', 'caucasian', 'latin', 'elf', 'dwarf', 'anime']:
+            if culture in features:
+                cultural_context = culture
+                break
+        
         for feature, intensity in features.items():
             if feature in self.property_mapping:
                 properties = self.property_mapping[feature]
+                
+                # Filter properties based on cultural context if available
+                filtered_properties = []
                 for prop in properties:
+                    if cultural_context and cultural_context in prop.lower():
+                        # Prefer culturally specific properties
+                        filtered_properties.append(prop)
+                    elif not cultural_context or cultural_context not in prop.lower():
+                        # Use generic properties if no cultural context or property is generic
+                        filtered_properties.append(prop)
+                
+                # If we have culturally filtered properties, use them; otherwise use all
+                final_properties = filtered_properties if filtered_properties else properties
+                
+                for prop in final_properties:
                     # Check if property exists in our dataset
                     if prop in self.properties:
                         property_values[prop] = intensity
@@ -236,20 +280,17 @@ class CharacterPropertyAnalyzer:
                         for similar_prop in similar_props:
                             property_values[similar_prop] = intensity
         
-        return property_values
+        return property_values, features
 
 # Initialize the property analyzer
 property_analyzer = CharacterPropertyAnalyzer(CHARACTER_PROPERTIES)
 
 # =============================================================================
-# CONFIGURATION - LLM LOCAL INFERENCE
+# CONFIGURATION - LLM LOCAL INFERENCE  
 # =============================================================================
 
-# =============================================================================
-# CONFIGURATION - LLM LOCAL INFERENCE
-# =============================================================================
-
-MODEL_DIR = "microsoft/DialoGPT-large"  # Changed to smaller model
+# Use a smaller, more reliable model for chat
+MODEL_DIR = "microsoft/DialoGPT-small"  # Changed to small for better compatibility
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 tokenizer = None
@@ -258,33 +299,31 @@ model = None
 try:
     print(f"Loading model on device: {DEVICE}...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
+    
+    # Set padding token if it doesn't exist
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_DIR,
         torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
-        device_map="auto" if DEVICE == "cuda" else "cpu",
+        device_map="auto" if DEVICE == "cuda" else None,
         low_cpu_mem_usage=True,
-        offload_folder="./offload"
-    )
+    ).to(DEVICE)
+    
     print("✓ Model loaded successfully")
 except Exception as e:
     print(f"✗ Failed to load model: {e}")
     print("⚠️  Continuing with NLP-only analysis")
 
 # System prompt for LLM to enhance property mapping
-SYSTEM_PROMPT = """You are a character analysis expert. Analyze the character description and identify physical traits, cultural background, lifestyle, and personality indicators.
+SYSTEM_PROMPT = """Analyze this character description and identify key traits. Focus on:
+- Physical features (eyes, nose, lips, body type)
+- Cultural/ethnic background
+- Age indicators
+- Lifestyle traits
 
-Focus on extracting:
-1. Physical features (face shape, eyes, nose, lips, jaw, body type)
-2. Cultural/ethnic indicators
-3. Lifestyle traits (athletic, sedentary, manual worker, etc.)
-4. Age indicators
-5. Personality traits that might affect appearance
-
-Return a JSON with:
-- "analysis": brief explanation of key traits identified
-- "enhanced_features": list of specific physical traits found
-- "cultural_context": any cultural/regional indicators
-- "lifestyle_traits": lifestyle indicators found"""
+Return a brief analysis highlighting the main characteristics."""
 
 # =============================================================================
 # CONFIGURATION - BLENDER INTEGRATION
@@ -409,111 +448,166 @@ print("=== BLENDER BRIDGE AUTO-STARTED ===")
 # ENHANCED PROPERTY MAPPING WITH LLM
 # =============================================================================
 
-def enhance_analysis_with_llm(prompt, nlp_properties):
-    """Use Mistral to enhance the NLP analysis"""
+def enhance_analysis_with_llm(prompt, nlp_properties, nlp_features):
+    """Use LLM to enhance the NLP analysis"""
     if model is None or tokenizer is None:
         print("✗ LLM not available, using NLP analysis only")
-        return nlp_properties, {"analysis": "LLM not available", "enhanced_features": []}
+        return nlp_properties, {
+            "analysis": "LLM not available", 
+            "enhanced_features": list(nlp_features.keys()),
+            "cultural_context": "",
+            "lifestyle_traits": "",
+            "llm_used": False
+        }
     
     try:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Character description: {prompt}"}
-        ]
+        # Create a simple prompt for DialoGPT (it doesn't support chat templates well)
+        input_text = f"{SYSTEM_PROMPT}\n\nCharacter description: {prompt}\n\nAnalysis:"
         
-        input_ids = tokenizer.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            return_tensors="pt"
+        # Tokenize with proper attention mask
+        inputs = tokenizer(
+            input_text, 
+            return_tensors="pt", 
+            max_length=512, 
+            truncation=True,
+            padding=True
         ).to(DEVICE)
-
+        
+        print("🧠 Generating LLM analysis...")
+        
         with torch.no_grad():
             outputs = model.generate(
-                input_ids,
-                max_new_tokens=512,
-                do_sample=False,
-                temperature=0.3,
+                inputs.input_ids,
+                attention_mask=inputs.attention_mask,  # Add attention mask
+                max_new_tokens=150,
+                do_sample=True,
+                temperature=0.7,
+                pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id
             )
         
-        raw_output = tokenizer.decode(outputs[0][input_ids.shape[-1]:], skip_special_tokens=True)
+        # Decode only the new tokens
+        input_length = inputs.input_ids.shape[1]
+        raw_output = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+        
+        print(f"✓ LLM Raw Output: {raw_output}")
         
         # Parse LLM output to extract additional insights
-        llm_analysis = parse_llm_output(raw_output)
+        llm_analysis = parse_llm_output(raw_output, prompt)
         
         # Enhance properties based on LLM insights
-        enhanced_properties = enhance_properties_with_llm_insights(nlp_properties, llm_analysis)
+        enhanced_properties = enhance_properties_with_llm_insights(nlp_properties, llm_analysis, nlp_features)
+        
+        print(f"✓ LLM enhanced {len(enhanced_properties) - len(nlp_properties)} additional properties")
         
         return enhanced_properties, llm_analysis
         
     except Exception as e:
         print(f"✗ LLM analysis failed: {e}")
-        return nlp_properties, {"analysis": f"LLM analysis failed: {str(e)}", "enhanced_features": []}
+        import traceback
+        traceback.print_exc()
+        return nlp_properties, {
+            "analysis": f"LLM analysis failed: {str(e)}", 
+            "enhanced_features": list(nlp_features.keys()),
+            "cultural_context": "",
+            "lifestyle_traits": "",
+            "llm_used": False
+        }
 
-def parse_llm_output(raw_output):
+def parse_llm_output(raw_output, original_prompt):
     """Parse LLM output to extract structured insights"""
     analysis = {
-        "analysis": raw_output[:200] + "..." if len(raw_output) > 200 else raw_output,
+        "analysis": raw_output.strip(),
         "enhanced_features": [],
         "cultural_context": "",
-        "lifestyle_traits": ""
+        "lifestyle_traits": "",
+        "llm_used": True,
+        "raw_output": raw_output.strip()
     }
     
     # Simple keyword extraction from LLM output
     llm_lower = raw_output.lower()
+    prompt_lower = original_prompt.lower()
     
-    # Extract cultural context
+    # Extract cultural context from both LLM output and original prompt
     cultural_indicators = []
-    for culture in ['chinese', 'indian', 'japanese', 'korean', 'african', 'european', 'american', 'middle eastern', 'latin']:
-        if culture in llm_lower:
+    for culture in ['chinese', 'indian', 'japanese', 'korean', 'african', 'european', 'american', 'middle eastern', 'latin', 'asian']:
+        if culture in llm_lower or culture in prompt_lower:
             cultural_indicators.append(culture)
     
     if cultural_indicators:
-        analysis["cultural_context"] = f"Detected cultural indicators: {', '.join(cultural_indicators)}"
+        analysis["cultural_context"] = f"Detected cultural indicators: {', '.join(set(cultural_indicators))}"
     
     # Extract lifestyle traits
     lifestyle_indicators = []
-    for trait in ['athletic', 'sedentary', 'manual', 'intellectual', 'wealthy', 'rural', 'urban', 'outdoor']:
+    for trait in ['athletic', 'sedentary', 'manual', 'intellectual', 'wealthy', 'rural', 'urban', 'outdoor', 'active', 'fit']:
         if trait in llm_lower:
             lifestyle_indicators.append(trait)
     
     if lifestyle_indicators:
         analysis["lifestyle_traits"] = f"Detected lifestyle: {', '.join(lifestyle_indicators)}"
     
+    # Extract enhanced features from LLM analysis
+    enhanced_features = []
+    for feature in ['big eyes', 'small eyes', 'sharp nose', 'wide nose', 'full lips', 'thin lips', 'aged', 'young', 'muscular', 'slim']:
+        if feature in llm_lower:
+            enhanced_features.append(feature)
+    
+    analysis["enhanced_features"] = enhanced_features
+    
     return analysis
 
-def enhance_properties_with_llm_insights(properties, llm_analysis):
+def enhance_properties_with_llm_insights(properties, llm_analysis, nlp_features):
     """Enhance property mapping based on LLM insights"""
     enhanced_properties = properties.copy()
     
     # Add cultural-specific properties based on LLM analysis
     cultural_context = llm_analysis.get("cultural_context", "").lower()
     
-    if "chinese" in cultural_context or "asian" in cultural_context:
+    if "asian" in cultural_context or any(x in cultural_context for x in ['chinese', 'japanese', 'korean']):
         # Add Asian-specific features
-        enhanced_properties["L1_Asian"] = 0.8
-        enhanced_properties["L2_Asian_Eyes_TypeAlmond_max"] = 0.7
+        if 'L1_Asian' not in enhanced_properties:
+            enhanced_properties["L1_Asian"] = 0.8
+        if 'big_eyes' in nlp_features and 'L2_Asian_Eyes_Size_max' not in enhanced_properties:
+            enhanced_properties["L2_Asian_Eyes_Size_max"] = nlp_features['big_eyes']
         
     elif "indian" in cultural_context or "south asian" in cultural_context:
         # Add South Asian features
-        enhanced_properties["L1_Asian"] = 0.8
-        enhanced_properties["L2_Asian_Eyes_Size_max"] = 0.6
+        if 'L1_Asian' not in enhanced_properties:
+            enhanced_properties["L1_Asian"] = 0.8
+        if 'big_eyes' in nlp_features and 'L2_Asian_Eyes_Size_max' not in enhanced_properties:
+            enhanced_properties["L2_Asian_Eyes_Size_max"] = nlp_features['big_eyes']
         
     elif "african" in cultural_context:
         # Add African features
-        enhanced_properties["L1_African"] = 0.8
-        enhanced_properties["L2_African_Nose_BaseSizeX_max"] = 0.7
+        if 'L1_African' not in enhanced_properties:
+            enhanced_properties["L1_African"] = 0.8
+        if 'wide_nose' in nlp_features and 'L2_African_Nose_BaseSizeX_max' not in enhanced_properties:
+            enhanced_properties["L2_African_Nose_BaseSizeX_max"] = nlp_features['wide_nose']
+    
+    # Add properties based on LLM enhanced features
+    enhanced_features = llm_analysis.get("enhanced_features", [])
+    for feature in enhanced_features:
+        if 'aged' in feature and 'old' not in nlp_features:
+            # Add aging properties if LLM detected age but NLP didn't
+            enhanced_properties["L2_Caucasian_Skin_Wrinkles_max"] = 0.7
+        elif 'muscular' in feature and 'muscular_body' not in nlp_features:
+            enhanced_properties["L2__Arms_UpperarmMass-UpperarmTone_max-max"] = 0.6
         
     # Add lifestyle-based properties
     lifestyle_traits = llm_analysis.get("lifestyle_traits", "").lower()
     
-    if "athletic" in lifestyle_traits:
-        enhanced_properties["L2__Arms_UpperarmMass-UpperarmTone_max-max"] = 0.8
-        enhanced_properties["L2__Shoulders_Mass-Tone_max-max"] = 0.8
+    if "athletic" in lifestyle_traits or "active" in lifestyle_traits or "fit" in lifestyle_traits:
+        if 'L2__Arms_UpperarmMass-UpperarmTone_max-max' not in enhanced_properties:
+            enhanced_properties["L2__Arms_UpperarmMass-UpperarmTone_max-max"] = 0.7
+        if 'L2__Shoulders_Mass-Tone_max-max' not in enhanced_properties:
+            enhanced_properties["L2__Shoulders_Mass-Tone_max-max"] = 0.7
         
     elif "sedentary" in lifestyle_traits:
-        enhanced_properties["L2__Stomach_LocalFat_max"] = 0.7
-        enhanced_properties["L2__Body_Size_max"] = 0.6
+        if 'L2__Stomach_LocalFat_max' not in enhanced_properties:
+            enhanced_properties["L2__Stomach_LocalFat_max"] = 0.6
+        if 'L2__Body_Size_max' not in enhanced_properties:
+            enhanced_properties["L2__Body_Size_max"] = 0.5
         
     return enhanced_properties
 
@@ -554,20 +648,37 @@ def generate_character():
         
         # STEP 1: NLP-based property mapping
         print("🔍 Step 1: Analyzing prompt with NLP...")
-        nlp_properties = property_analyzer.map_to_properties(user_prompt)
+        nlp_properties, nlp_features = property_analyzer.map_to_properties(user_prompt)
         print(f"✓ NLP mapped {len(nlp_properties)} properties")
+        print("📊 NLP Property-Value Map:")
+        for prop, value in nlp_properties.items():
+            print(f"   {prop}: {value:.2f}")
         
         # STEP 2: Enhance with LLM analysis
-        print("🧠 Step 2: Enhancing analysis with Mistral LLM...")
-        final_properties, llm_analysis = enhance_analysis_with_llm(user_prompt, nlp_properties)
+        print("🧠 Step 2: Enhancing analysis with LLM...")
+        final_properties, llm_analysis = enhance_analysis_with_llm(user_prompt, nlp_properties, nlp_features)
+        
+        # Show what LLM added
+        llm_added = set(final_properties.keys()) - set(nlp_properties.keys())
+        if llm_added:
+            print(f"✓ LLM added {len(llm_added)} properties: {list(llm_added)}")
+        else:
+            print("✓ LLM analysis completed (no additional properties added)")
+        
         print(f"✓ Final mapping: {len(final_properties)} properties")
+        print("📊 Final Property-Value Map:")
+        for prop, value in final_properties.items():
+            source = "LLM" if prop in llm_added else "NLP"
+            print(f"   {prop}: {value:.2f} [{source}]")
         
         # STEP 3: Prepare data for Blender
         structured_data = {
             "properties": final_properties,
             "analysis": llm_analysis,
             "prompt": user_prompt,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "property_map": final_properties,
+            "llm_used": llm_analysis.get("llm_used", False)
         }
         
         # Create request for Blender
@@ -599,7 +710,10 @@ def generate_character():
                     "message": "Character generated successfully!",
                     "details": response_data,
                     "property_count": len(final_properties),
-                    "llm_analysis": llm_analysis.get("analysis", "No LLM analysis available")
+                    "property_map": final_properties,
+                    "llm_analysis": llm_analysis,
+                    "features_detected": list(nlp_features.keys()),
+                    "llm_used": llm_analysis.get("llm_used", False)
                 })
             
             time.sleep(0.5)
