@@ -92,6 +92,12 @@ class CharacterPropertyAnalyzer:
             'tall': ['tall', 'height'],
             'short': ['short', 'small stature', 'petite'],
             
+            #Explicit Tone and Mass Keywords
+            'very_toned': ['very toned', 'defined muscle', 'high tone', 'sculpted', 'low fat', 'chiseled body'],
+            'low_tone': ['flabby', 'soft body', 'low muscle tone', 'out of shape', 'untrained body'],
+            'high_mass': ['chubby', 'heavy build', 'high fat', 'plump', 'full figured'],
+            'low_mass': ['skinny', 'underweight', 'gaunt', 'anorexic'],
+
             # Age features
             'young': ['young', 'youthful', 'boyish', 'girlish', 'teenage'],
             'old': ['old', 'aged', 'elderly', 'wrinkled', 'senior', 'aged skin'],
@@ -176,6 +182,28 @@ class CharacterPropertyAnalyzer:
             'tall': ['L2__Body_Size_max'],
             'short': ['L2__Body_Size_min'],
             
+            # **NEW: Explicit Mass/Tone Mappings using L2__*-Mass-Tone_**
+            'very_toned': [
+                'L2__Arms_UpperarmMass-UpperarmTone_max-max',
+                'L2__Legs_UpperlegsMass-UpperlegsTone_max-max',
+                'L2__Shoulders_Mass-Tone_max-max', 
+                'L2__Pelvis_GluteusMass-GluteusTone_max-max' 
+            ],
+            'low_tone': [
+                'L2__Arms_UpperarmMass-UpperarmTone_min-min', 
+                'L2__Legs_UpperlegsMass-UpperlegsTone_min-min',
+                'L2__Shoulders_Mass-Tone_min-min', 
+                'L2__Pelvis_GluteusMass-GluteusTone_min-min' 
+            ],
+            'high_mass': [
+                'L2__Body_Size_max', 'L2__Stomach_LocalFat_max', 
+                'L2__Torso_Mass-Tone_max-min' 
+            ],
+            'low_mass': [
+                'L2__Body_Size_min', 'L2__Hands_Mass-Tone_min-min',
+                'L2__Torso_Mass-Tone_min-min' 
+            ],
+            
             # Age
             'old': ['L2_Caucasian_Skin_Wrinkles_max', 'L2_Asian_Skin_Wrinkles_max', 'L2_African_Skin_Wrinkles_max'],
             'young': ['L2_Caucasian_Skin_Wrinkles_min', 'L2_Asian_Skin_Wrinkles_min', 'L2_African_Skin_Wrinkles_min'],
@@ -194,34 +222,48 @@ class CharacterPropertyAnalyzer:
         self.default_intensity = 0.7
 
     def analyze_prompt_with_nlp(self, prompt):
-        """Use spaCy for detailed NLP analysis of the prompt"""
+        """
+        Analyzes the prompt by prioritizing direct, full-phrase matching 
+        to accurately map features and resolve ambiguity (e.g., separating 'wide nose' from 'wide body').
+        """
         if self.nlp is None:
+            # Keep the simple fallback if spaCy is not loaded
             return self._simple_analysis(prompt)
         
-        doc = self.nlp(prompt.lower())
         features = {}
+        prompt_lower = prompt.lower()
         
-        # Extract features using NLP
-        for token in doc:
-            if token.pos_ in ['ADJ', 'NOUN']:
-                for feature, keywords in self.feature_keywords.items():
-                    for keyword in keywords:
-                        if token.text in keyword.split():
-                            intensity = self.default_intensity
-                            # Check for intensity modifiers
-                            for child in token.children:
-                                if child.pos_ == 'ADV' and child.text in self.intensity_modifiers:
-                                    intensity = self.intensity_modifiers[child.text]
-                            features[feature] = intensity
-        
-        # Check for multi-word phrases
+        print("🔍 Starting revised NLP analysis (prioritizing full phrases)...")
+
+        # Iterate over all defined features and their keywords
         for feature, keywords in self.feature_keywords.items():
-            for keyword in keywords:
-                if keyword in prompt.lower() and feature not in features:
-                    features[feature] = self.default_intensity
+            best_intensity = 0.0
+            
+            # Check for the literal, full keyword phrase (most accurate)
+            for keyword in sorted(keywords, key=len, reverse=True): # Check longer keywords first
+                
+                if keyword in prompt_lower:
+                    intensity = self.default_intensity
+                    match_index = prompt_lower.find(keyword)
+
+                    # Check for an intensity modifier directly before the keyword
+                    for modifier, mod_intensity in self.intensity_modifiers.items():
+                        modifier_phrase = f"{modifier} {keyword}"
+                        
+                        # Find the modifier phrase. If it exists and is immediately before the keyword
+                        # (i.e., at the exact index of the match), assign its intensity.
+                        if prompt_lower.find(modifier_phrase) == match_index - (len(modifier) + 1):
+                            intensity = mod_intensity
+                            break # Found the most direct modifier
+
+                    best_intensity = max(best_intensity, intensity)
+                    
+            if best_intensity > 0.0:
+                features[feature] = best_intensity
         
         return features
 
+# The original fallback `_simple_analysis` method starting around line 222 should be kept as is.
     def _simple_analysis(self, prompt):
         """Fallback analysis without spaCy"""
         prompt_lower = prompt.lower()
