@@ -301,25 +301,35 @@ class CharacterPropertyAnalyzer:
         self.default_intensity = 0.65
 
     def detect_gender(self, prompt):
-        """Detect gender from prompt with confidence scoring"""
+        """Detect gender from prompt with confidence scoring using word boundaries"""
         prompt_lower = prompt.lower()
         
         female_score = 0
         male_score = 0
         
+        # Check for female keywords with word boundaries
         for keyword in self.feature_keywords['female']:
-            if keyword in prompt_lower:
-                female_score += 1
+            # Use word boundaries to avoid substring matches
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            matches = re.findall(pattern, prompt_lower)
+            female_score += len(matches)
         
-        for keyword in self.feature_keywords['male']:
-            if keyword in prompt_lower:
-                male_score += 1
+        # Only check for male keywords if no female indicators found
+        # This prevents "female" containing "male" from causing issues
+        if female_score == 0:
+            for keyword in self.feature_keywords['male']:
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                matches = re.findall(pattern, prompt_lower)
+                male_score += len(matches)
         
-        # Default to male if no clear indicators
-        if female_score > male_score:
+        # Clear decision: if any female indicators found, return female
+        if female_score > 0:
             return 'female', female_score
+        elif male_score > 0:
+            return 'male', male_score
         else:
-            return 'male', male_score if male_score > 0 else 1
+            # Default to male if no clear indicators
+            return 'male', 1
 
     def detect_ethnicity(self, prompt):
         """Detect ethnicity with fallback to best fit"""
