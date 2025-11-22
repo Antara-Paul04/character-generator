@@ -13,6 +13,10 @@ import spacy
 import re
 from typing import Dict, List, Tuple, Any
 import numpy as np
+from hair_analyzer import HairDescriptionAnalyzer
+from hairnet_integration import HairNetIntegrator, MockHairNetIntegrator
+import time
+
 
 app = Flask(__name__)
 
@@ -370,7 +374,9 @@ class CharacterPropertyAnalyzer:
             'anime': 'Anime'
         }
         return ethnicity_prefix_map.get(ethnicity, 'Caucasian')
-
+    
+    
+    
     def filter_properties_by_culture(self, properties, cultural_context):
         """Filter properties to match detected culture"""
         if not cultural_context:
@@ -872,6 +878,18 @@ def start_blender():
     return jsonify(result) if result["success"] else (jsonify(result), 500)
 
 # Add this to replace the existing generate_character route in frontend.py
+hair_analyzer = HairDescriptionAnalyzer(nlp)
+HAIRNET_PATH = os.path.join(os.getcwd(), "hairnet-ai")  # Adjust path as needed
+try:
+    if os.path.exists(HAIRNET_PATH):
+        hair_generator = HairNetIntegrator(HAIRNET_PATH)
+        print("✓ HairNet AI integrator loaded")
+    else:
+        hair_generator = MockHairNetIntegrator()
+        print("⚠ Using mock hair generator (HairNet not found)")
+except Exception as e:
+    hair_generator = MockHairNetIntegrator()
+    print(f"⚠ Using mock hair generator: {e}")
 
 @app.route('/generate', methods=['POST'])
 def generate_character():
@@ -889,76 +907,94 @@ def generate_character():
             }), 400
 
         print(f"\n{'='*70}")
-        print(f"🎭 PROCESSING NEW CHARACTER REQUEST")
+        print(f"🎭 PROCESSING NEW CHARACTER REQUEST WITH HAIR")
         print(f"{'='*70}")
         print(f"Prompt: {user_prompt}")
         print(f"{'='*70}\n")
         
-        # STEP 1: Detect gender and ethnicity first
+        # STEP 1: Detect gender and ethnicity
         print("🔍 Step 1: Detecting gender and ethnicity...")
         gender, gender_confidence = property_analyzer.detect_gender(user_prompt)
         ethnicity, ethnicity_confidence, ethnicity_source = property_analyzer.detect_ethnicity(user_prompt)
         
         print(f"✓ Gender: {gender.upper()} (confidence: {gender_confidence})")
-        print(f"✓ Ethnicity: {ethnicity.upper()} (confidence: {ethnicity_confidence}, source: {ethnicity_source})")
+        print(f"✓ Ethnicity: {ethnicity.upper()} (confidence: {ethnicity_confidence})")
         
-        # STEP 2: NLP-based property mapping with detected context
-        print("\n🔍 Step 2: Analyzing prompt with NLP...")
+        # STEP 2: Analyze hair description
+        print("\n💇 Step 2: Analyzing hair description...")
+        hair_features = hair_analyzer.extract_hair_description(user_prompt)
+        
+        if hair_features['has_hair_description']:
+            print(f"✓ Hair detected!")
+            print(f"  Length: {hair_features.get('length', 'Not specified')}")
+            print(f"  Style: {hair_features.get('style', 'Not specified')}")
+            print(f"  Volume: {hair_features.get('volume', 'Not specified')}")
+            print(f"  Color: {hair_features.get('color', 'Not specified')}")
+            
+            hair_params = hair_analyzer.convert_to_hairnet_params(hair_features)
+            print(f"✓ Converted to HairNet parameters")
+        else:
+            print("ℹ No hair description found in prompt")
+            hair_params = None
+        
+        # STEP 3: NLP-based body property mapping
+        print("\n🔍 Step 3: Analyzing body properties with NLP...")
         nlp_properties, nlp_features, detected_gender, detected_ethnicity = property_analyzer.map_to_properties(user_prompt)
         
-        print(f"✓ NLP mapped {len(nlp_properties)} properties")
-        print(f"✓ Features detected: {list(nlp_features.keys())}")
+        print(f"✓ NLP mapped {len(nlp_properties)} body properties")
         
         # Ensure minimum 30 properties
         if len(nlp_properties) < 30:
-            print(f"\n⚠️  Only {len(nlp_properties)} properties detected. Enhancing...")
             nlp_properties = property_analyzer.ensure_minimum_properties(
                 nlp_properties, nlp_features, detected_ethnicity
             )
         
-        print(f"\n📊 Property Breakdown:")
-        print(f"  - Total properties: {len(nlp_properties)}")
-        print(f"  - Gender: {detected_gender}")
-        print(f"  - Ethnicity: {detected_ethnicity}")
-        
-        # Show sample of properties
-        sample_props = list(nlp_properties.items())[:10]
-        print(f"\n📋 Sample Properties (showing 10/{len(nlp_properties)}):")
-        for prop, value in sample_props:
-            print(f"   {prop}: {value:.2f}")
-        
-        # STEP 3: Enhance with LLM analysis
-        print("\n🧠 Step 3: Enhancing analysis with LLM...")
+        # STEP 4: Enhance with LLM analysis
+        print("\n🧠 Step 4: Enhancing analysis with LLM...")
         final_properties, llm_analysis = enhance_analysis_with_llm(
             user_prompt, nlp_properties, nlp_features
         )
         
-        # Show what LLM added
-        llm_added = set(final_properties.keys()) - set(nlp_properties.keys())
-        if llm_added:
-            print(f"✓ LLM added {len(llm_added)} properties")
-            if len(llm_added) <= 10:
-                print(f"  Added properties: {list(llm_added)}")
+        print(f"✅ FINAL BODY MAPPING: {len(final_properties)} properties")
+        
+        # STEP 5: Generate hair model if needed
+        hair_generation_result = None
+        if hair_params:
+            print("\n🎨 Step 5: Generating 3D hair model...")
+            try:
+                character_name = f"{detected_gender}_{detected_ethnicity}"
+                hair_generation_result = hair_generator.generate_hair_model(
+                    hair_params, 
+                    character_name
+                )
+                
+                if hair_generation_result['success']:
+                    print(f"✓ Hair model generated: {hair_generation_result.get('output_path', 'N/A')}")
+                else:
+                    print(f"⚠ Hair generation failed: {hair_generation_result.get('error', 'Unknown')}")
+            except Exception as e:
+                print(f"✗ Hair generation error: {e}")
+                hair_generation_result = {'success': False, 'error': str(e)}
         else:
-            print("✓ LLM analysis completed (no additional properties)")
+            print("\nℹ Step 5: Skipped (no hair description)")
         
-        # Final count
-        print(f"\n✅ FINAL MAPPING: {len(final_properties)} properties")
-        print(f"   Gender: {detected_gender.upper()}")
-        print(f"   Ethnicity: {detected_ethnicity.upper()}")
-        
-        # STEP 4: Prepare data for Blender
+        # STEP 6: Prepare data for Blender
         structured_data = {
             "properties": final_properties,
             "analysis": llm_analysis,
             "prompt": user_prompt,
             "timestamp": datetime.now().isoformat(),
-            "property_map": final_properties,
             "llm_used": llm_analysis.get("llm_used", False),
             "gender": detected_gender,
             "ethnicity": detected_ethnicity,
             "property_count": len(final_properties),
-            "features_detected": list(nlp_features.keys())
+            "features_detected": list(nlp_features.keys()),
+            
+            # Hair data
+            "has_hair": hair_params is not None,
+            "hair_features": hair_features if hair_params else None,
+            "hair_params": hair_params,
+            "hair_generation": hair_generation_result
         }
         
         # Create request for Blender
@@ -970,12 +1006,12 @@ def generate_character():
         }
         
         # Write request to file
-        print(f"\n📤 Sending request to Blender...")
+        print(f"\n📤 Sending request to Blender (with hair data)...")
         with open(REQUEST_FILE, 'w') as f:
             json.dump(request_data, f, indent=2)
         
         # Wait for response
-        timeout = 30
+        timeout = 45  # Increased timeout for hair processing
         start_time = time.time()
         
         print(f"⏳ Waiting for Blender response (timeout: {timeout}s)...")
@@ -991,24 +1027,29 @@ def generate_character():
                 print(f"\n✅ SUCCESS! Character generated in Blender")
                 print(f"{'='*70}\n")
                 
-                return jsonify({
+                response = {
                     "success": True,
                     "message": f"✓ {detected_gender.capitalize()} {detected_ethnicity} character generated!",
                     "details": response_data,
                     "property_count": len(final_properties),
-                    "property_map": final_properties,
-                    "llm_analysis": llm_analysis,
-                    "features_detected": list(nlp_features.keys()),
                     "llm_used": llm_analysis.get("llm_used", False),
                     "gender": detected_gender,
                     "ethnicity": detected_ethnicity,
-                    "character_object": response_data.get("character_object", "unknown")
-                })
+                    "character_object": response_data.get("character_object", "unknown"),
+                    
+                    # Hair info
+                    "has_hair": hair_params is not None,
+                    "hair_method": response_data.get("hair_method", "none")
+                }
+                
+                if hair_params:
+                    response["hair_description"] = hair_analyzer.generate_hair_description_for_image(hair_features)
+                
+                return jsonify(response)
             
             time.sleep(0.5)
         
         print(f"\n❌ TIMEOUT: No response from Blender after {timeout}s")
-        print(f"{'='*70}\n")
         
         return jsonify({
             "error": "Timeout waiting for Blender response. Is Blender still running?"
@@ -1018,7 +1059,6 @@ def generate_character():
         print(f"\n❌ ERROR: {str(e)}")
         import traceback
         traceback.print_exc()
-        print(f"{'='*70}\n")
         
         return jsonify({"error": f"Generation Error: {str(e)}"}), 500
 
@@ -1035,11 +1075,11 @@ def status():
         "last_successful_generation": last_gen_time,
         "model_file": MODEL_BLEND_FILE,
         "model_exists": os.path.exists(MODEL_BLEND_FILE),
-        "blender_executable": BLENDER_EXECUTABLE,
-        "blender_exists": os.path.exists(BLENDER_EXECUTABLE),
         "properties_loaded": len(CHARACTER_PROPERTIES) > 0,
         "llm_available": model is not None,
         "nlp_available": nlp is not None,
+        "hair_generator": type(hair_generator).__name__,
+        "hairnet_available": isinstance(hair_generator, HairNetIntegrator),
         "timestamp": datetime.now().isoformat()
     })
 

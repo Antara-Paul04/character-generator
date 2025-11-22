@@ -1,4 +1,5 @@
 import bpy
+from mathlib import Vector
 import re
 import json
 import os
@@ -151,8 +152,180 @@ def stop_bridge_monitoring():
    
     print("Bridge monitoring stopped.")
 
+def import_hair_obj(obj_path, character_obj):
+    """Import hair .obj file and attach it to character"""
+    try:
+        if not os.path.exists(obj_path):
+            print(f"✗ Hair OBJ not found: {obj_path}")
+            return False
+        
+        # Import the OBJ
+        bpy.ops.import_scene.obj(filepath=obj_path)
+        
+        # Get the imported objects
+        imported_objects = [obj for obj in bpy.context.selected_objects]
+        
+        if not imported_objects:
+            print("✗ No objects were imported from hair OBJ")
+            return False
+        
+        print(f"✓ Imported {len(imported_objects)} hair objects")
+        
+        # Find the character's head location
+        head_location = get_head_location(character_obj)
+        
+        # Parent all hair objects to the character
+        for hair_obj in imported_objects:
+            hair_obj.location = head_location
+            hair_obj.parent = character_obj
+            hair_obj.matrix_parent_inverse = character_obj.matrix_world.inverted()
+            hair_obj.name = f"{character_obj.name}_hair_{hair_obj.name}"
+            
+            print(f"✓ Attached {hair_obj.name} to {character_obj.name}")
+        
+        setup_hair_material(imported_objects)
+        
+        return True
+        
+    except Exception as e:
+        print(f"✗ Error importing hair: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def get_head_location(character_obj):
+    """Find the approximate head location of the character"""
+    if not character_obj or not character_obj.data:
+        return Vector((0, 0, 1.7))
+    
+    mesh = character_obj.data
+    world_matrix = character_obj.matrix_world
+    
+    max_z = -float('inf')
+    head_location = Vector((0, 0, 0))
+    
+    for vertex in mesh.vertices:
+        world_coord = world_matrix @ vertex.co
+        if world_coord.z > max_z:
+            max_z = world_coord.z
+            head_location = world_coord
+    
+    head_location.z += 0.1
+    
+    print(f"✓ Head location: {head_location}")
+    return head_location
+
+def setup_hair_material(hair_objects):
+    """Setup basic material for hair objects"""
+    try:
+        mat_name = "Hair_Material"
+        
+        if mat_name not in bpy.data.materials:
+            mat = bpy.data.materials.new(name=mat_name)
+            mat.use_nodes = True
+            
+            bsdf = mat.node_tree.nodes.get("Principled BSDF")
+            if bsdf:
+                bsdf.inputs['Base Color'].default_value = (0.05, 0.02, 0.01, 1)
+                bsdf.inputs['Roughness'].default_value = 0.4
+                bsdf.inputs['Specular'].default_value = 0.5
+        else:
+            mat = bpy.data.materials[mat_name]
+        
+        for obj in hair_objects:
+            if obj.type == 'MESH':
+                if len(obj.data.materials) == 0:
+                    obj.data.materials.append(mat)
+                else:
+                    obj.data.materials[0] = mat
+        
+        print(f"✓ Applied hair material to {len(hair_objects)} objects")
+        
+    except Exception as e:
+        print(f"⚠ Warning: Could not setup hair material: {e}")
+
+def create_particle_hair_system(character_obj, hair_params):
+    """Create a Blender particle hair system"""
+    try:
+        bpy.context.view_layer.objects.active = character_obj
+        character_obj.select_set(True)
+        
+        bpy.ops.object.particle_system_add()
+        
+        psys = character_obj.particle_systems[-1]
+        psys.name = "Hair_System"
+        
+        settings = psys.settings
+        settings.type = 'HAIR'
+        
+        settings.count = hair_params.get('particle_count', 5000)
+        settings.hair_length = hair_params.get('particle_length', 0.5)
+        settings.hair_step = 5
+        settings.render_step = 5
+        
+        settings.child_nbr = int(hair_params.get('particle_count', 5000) * 0.1)
+        settings.child_length = 1.0
+        settings.child_radius = hair_params.get('randomness', 0.3)
+        
+        curl_intensity = hair_params.get('curl_intensity', 0.0)
+        if curl_intensity > 0:
+            settings.child_type = 'INTERPOLATED'
+            settings.clump_factor = 0.2 + curl_intensity * 0.3
+            settings.roughness_1 = curl_intensity
+        
+        print(f"✓ Created particle hair system with {settings.count} particles")
+        return True
+        
+    except Exception as e:
+        print(f"✗ Error creating particle hair system: {e}")
+        return False
+
+def apply_hair_to_character(character_obj, hair_data):
+    """Apply hair to character using available methods"""
+    result = {
+        'success': False,
+        'method': None,
+        'message': ''
+    }
+    
+    # Method 1: Try to import HairNet .obj file
+    if hair_data.get('hair_generation') and hair_data['hair_generation'].get('success'):
+        gen_result = hair_data['hair_generation']
+        if 'output_path' in gen_result and not gen_result.get('mock', False):
+            obj_path = gen_result['output_path']
+            if import_hair_obj(obj_path, character_obj):
+                result['success'] = True
+                result['method'] = 'hairnet_obj'
+                result['message'] = 'HairNet OBJ imported successfully'
+                return result
+    
+    # Method 2: Fallback to particle system
+    if hair_data.get('hair_params'):
+        if create_particle_hair_system(character_obj, hair_data['hair_params']):
+            result['success'] = True
+            result['method'] = 'particle_system'
+            result['message'] = 'Particle hair system created'
+            return result
+    
+    # Method 3: Create basic default hair
+    default_params = {
+        'particle_count': 5000,
+        'particle_length': 0.5,
+        'curl_intensity': 0.0,
+        'randomness': 0.3
+    }
+    if create_particle_hair_system(character_obj, default_params):
+        result['success'] = True
+        result['method'] = 'default_particle'
+        result['message'] = 'Default particle hair created'
+        return result
+    
+    result['message'] = 'All hair application methods failed'
+    return result
+
+# Update the check_for_requests function to handle hair data
 def check_for_requests():
-    """Timer function that checks for new character requests."""
+    """Timer function that checks for new character requests"""
     global is_monitoring
    
     if not is_monitoring:
@@ -160,7 +333,6 @@ def check_for_requests():
     
     try:
         if os.path.exists(REQUEST_FILE):
-            # Read the request
             with open(REQUEST_FILE, 'r') as f:
                 request_data = json.load(f)
            
@@ -180,9 +352,9 @@ def check_for_requests():
                 os.remove(REQUEST_FILE)
                 return 0.5
 
-            # Extract gender and ethnicity from structured data
             gender = structured_data.get('gender', 'male')
             ethnicity = structured_data.get('ethnicity', 'caucasian')
+            has_hair = structured_data.get('has_hair', False)
             
             print(f"\n{'='*60}")
             print(f"🎭 NEW CHARACTER REQUEST")
@@ -190,14 +362,26 @@ def check_for_requests():
             print(f"Prompt: {prompt}")
             print(f"Gender: {gender.upper()}")
             print(f"Ethnicity: {ethnicity.upper()}")
-            print(f"Properties to apply: {len(structured_data.get('properties', {}))}")
+            print(f"Properties: {len(structured_data.get('properties', {}))}")
+            print(f"Has Hair: {'YES' if has_hair else 'NO'}")
             print(f"{'='*60}\n")
            
-            # Get the appropriate character object based on gender
             character = get_object_by_gender(gender)
            
             if character:
+                # Apply body properties
                 applied, failed = process_enhanced_properties(structured_data, character, gender)
+                
+                # Apply hair if available
+                hair_result = None
+                if has_hair:
+                    print("\n💇 Applying hair to character...")
+                    hair_result = apply_hair_to_character(character, structured_data)
+                    
+                    if hair_result['success']:
+                        print(f"✓ Hair applied using method: {hair_result['method']}")
+                    else:
+                        print(f"⚠ Hair application failed: {hair_result['message']}")
                
                 response_data = {
                     "timestamp": datetime.now().isoformat(),
@@ -208,7 +392,10 @@ def check_for_requests():
                     "message": f"✓ {gender.capitalize()} character generated successfully!",
                     "properties_applied": applied,
                     "properties_failed": failed,
-                    "character_object": character.name
+                    "character_object": character.name,
+                    "has_hair": has_hair,
+                    "hair_method": hair_result['method'] if hair_result and hair_result['success'] else 'none',
+                    "hair_status": hair_result['message'] if hair_result else 'No hair data provided'
                 }
             else:
                 response_data = {
@@ -219,11 +406,9 @@ def check_for_requests():
                     "message": f"Could not find {gender} character object in Blender scene."
                 }
            
-            # Send response
             with open(RESPONSE_FILE, 'w') as f:
                 json.dump(response_data, f)
            
-            # Remove request file
             os.remove(REQUEST_FILE)
            
     except Exception as e:
@@ -243,6 +428,99 @@ def check_for_requests():
             os.remove(REQUEST_FILE)
    
     return 0.5
+
+# def check_for_requests():
+#     """Timer function that checks for new character requests."""
+#     global is_monitoring
+   
+#     if not is_monitoring:
+#         return None
+    
+#     try:
+#         if os.path.exists(REQUEST_FILE):
+#             # Read the request
+#             with open(REQUEST_FILE, 'r') as f:
+#                 request_data = json.load(f)
+           
+#             structured_data = request_data.get('structured_data', {})
+#             prompt = request_data['prompt']
+           
+#             if not structured_data:
+#                 print("✗ Error: Received request file missing 'structured_data'.")
+#                 response_data = {
+#                     "timestamp": datetime.now().isoformat(),
+#                     "prompt": prompt,
+#                     "status": "error",
+#                     "message": "Frontend failed to provide structured data."
+#                 }
+#                 with open(RESPONSE_FILE, 'w') as f:
+#                     json.dump(response_data, f)
+#                 os.remove(REQUEST_FILE)
+#                 return 0.5
+
+#             # Extract gender and ethnicity from structured data
+#             gender = structured_data.get('gender', 'male')
+#             ethnicity = structured_data.get('ethnicity', 'caucasian')
+            
+#             print(f"\n{'='*60}")
+#             print(f"🎭 NEW CHARACTER REQUEST")
+#             print(f"{'='*60}")
+#             print(f"Prompt: {prompt}")
+#             print(f"Gender: {gender.upper()}")
+#             print(f"Ethnicity: {ethnicity.upper()}")
+#             print(f"Properties to apply: {len(structured_data.get('properties', {}))}")
+#             print(f"{'='*60}\n")
+           
+#             # Get the appropriate character object based on gender
+#             character = get_object_by_gender(gender)
+           
+#             if character:
+#                 applied, failed = process_enhanced_properties(structured_data, character, gender)
+               
+#                 response_data = {
+#                     "timestamp": datetime.now().isoformat(),
+#                     "prompt": prompt,
+#                     "gender": gender,
+#                     "ethnicity": ethnicity,
+#                     "status": "completed",
+#                     "message": f"✓ {gender.capitalize()} character generated successfully!",
+#                     "properties_applied": applied,
+#                     "properties_failed": failed,
+#                     "character_object": character.name
+#                 }
+#             else:
+#                 response_data = {
+#                     "timestamp": datetime.now().isoformat(),
+#                     "prompt": prompt,
+#                     "gender": gender,
+#                     "status": "error",
+#                     "message": f"Could not find {gender} character object in Blender scene."
+#                 }
+           
+#             # Send response
+#             with open(RESPONSE_FILE, 'w') as f:
+#                 json.dump(response_data, f)
+           
+#             # Remove request file
+#             os.remove(REQUEST_FILE)
+           
+#     except Exception as e:
+#         print(f"✗ Error processing request: {e}")
+#         import traceback
+#         traceback.print_exc()
+        
+#         error_response = {
+#             "timestamp": datetime.now().isoformat(),
+#             "status": "error",
+#             "message": f"Error: {str(e)}"
+#         }
+#         with open(RESPONSE_FILE, 'w') as f:
+#             json.dump(error_response, f)
+       
+#         if os.path.exists(REQUEST_FILE):
+#             os.remove(REQUEST_FILE)
+   
+#     return 0.5
 
 # =============================================================================
 # BLENDER UI PANEL

@@ -1,24 +1,44 @@
-# Core web framework
-flask==2.3.3
-
-# Machine Learning & NLP
-torch==2.0.1
-transformers==4.31.0
-spacy==3.6.1
-pandas==2.0.3
-numpy==1.24.3
-
-# Additional dependencies for specific models
-accelerate==0.21.0
-safetensors==0.3.1
-
-# For file operations and utilities
-requests==2.31.0
-python-dateutil==2.8.2
-pathlib2==2.3.7.post1; python_version < "3.4"
-
-# Development and debugging
-ipython==8.14.0
-jupyter==1.0.0
-
-python -m pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+asgiref==3.8.1
+backports.tarfile==1.2.0
+blinker==1.9.0
+build==1.2.2.post1
+certifi==2024.12.14
+charset-normalizer==3.4.1
+click==8.3.0
+colorama==0.4.6
+Django==5.1.5
+docutils==0.21.2
+Flask==3.1.2
+id==1.5.0
+idna==3.10
+importlib_metadata==8.6.1
+itsdangerous==2.2.0
+jaraco.classes==3.4.0
+jaraco.context==6.0.1
+jaraco.functools==4.1.0
+Jinja2==3.1.6
+keyring==25.6.0
+markdown-it-py==3.0.0
+MarkupSafe==3.0.3
+mdurl==0.1.2
+more-itertools==10.6.0
+nh3==0.2.20
+numpy==2.2.6
+opencv-python==4.12.0.88
+packaging==24.2
+pillow==12.0.0
+Pygments==2.19.1
+pyproject_hooks==1.2.0
+pywin32-ctypes==0.2.3
+readme_renderer==44.0
+requests==2.32.3
+requests-toolbelt==1.0.0
+rfc3986==2.0.0
+rich==13.9.4
+sqlparse==0.5.3
+twine==6.1.0
+tzdata==2024.2
+urllib3==2.3.0
+Werkzeug==3.1.3
+zipp==3.21.0
+# python -m pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
