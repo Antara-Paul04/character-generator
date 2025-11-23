@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 import spacy
 
 class HairDescriptionAnalyzer:
@@ -69,6 +69,16 @@ class HairDescriptionAnalyzer:
             'curly': 0.7,
             'kinky': 1.0
         }
+        
+        # Define feature categories
+        self.category_map = {
+            'length': ['very_long', 'long', 'medium', 'short', 'very_short'],
+            'style': ['straight', 'wavy', 'curly', 'kinky', 'braided', 'dreadlocks'],
+            'volume': ['thick', 'thin', 'normal_volume'],
+            'texture': ['smooth', 'rough', 'soft'],
+            'color': ['black', 'brown', 'blonde', 'red', 'white'],
+            'special_style': ['ponytail', 'bun', 'bangs', 'mohawk', 'undercut']
+        }
     
     def extract_hair_description(self, prompt: str) -> Dict:
         """Extract hair-related features from prompt"""
@@ -94,13 +104,22 @@ class HairDescriptionAnalyzer:
         
         # Extract each feature type
         for feature_type in ['length', 'style', 'volume', 'texture', 'color', 'special_style']:
-            for feature_key, keywords in self.hair_keywords.items():
-                if any(self._is_feature_category(feature_key, feature_type)):
-                    for keyword in keywords:
-                        if keyword in prompt_lower:
+            # Get all keywords for this feature type
+            feature_keywords = []
+            for feature_key in self.category_map.get(feature_type, []):
+                if feature_key in self.hair_keywords:
+                    feature_keywords.extend(self.hair_keywords[feature_key])
+            
+            # Check if any of these keywords are in the prompt
+            for keyword in feature_keywords:
+                if keyword in prompt_lower:
+                    # Find which feature key this keyword belongs to
+                    for feature_key, keywords in self.hair_keywords.items():
+                        if keyword in keywords and feature_key in self.category_map.get(feature_type, []):
                             if features[feature_type] is None:
                                 features[feature_type] = feature_key
                             break
+                    break  # Found a match for this feature type
         
         # Extract raw description (sentences containing "hair")
         if self.nlp:
@@ -118,18 +137,6 @@ class HairDescriptionAnalyzer:
                     features['raw_description'] += sent.strip() + '. '
         
         return features
-    
-    def _is_feature_category(self, feature_key: str, category: str) -> bool:
-        """Check if feature belongs to category"""
-        category_map = {
-            'length': ['very_long', 'long', 'medium', 'short', 'very_short'],
-            'style': ['straight', 'wavy', 'curly', 'kinky', 'braided', 'dreadlocks'],
-            'volume': ['thick', 'thin', 'normal_volume'],
-            'texture': ['smooth', 'rough', 'soft'],
-            'color': ['black', 'brown', 'blonde', 'red', 'white'],
-            'special_style': ['ponytail', 'bun', 'bangs', 'mohawk', 'undercut']
-        }
-        return feature_key in category_map.get(category, [])
     
     def convert_to_hairnet_params(self, features: Dict) -> Dict:
         """Convert analyzed features to HairNet-compatible parameters"""
