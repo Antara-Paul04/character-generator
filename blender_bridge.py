@@ -16,23 +16,247 @@ RESPONSE_FILE = os.path.join(COMMUNICATION_DIR, "character_response.json")
 is_monitoring = False
 
 # =============================================================================
+# HAIR GENERATION SYSTEM (GBH Tool Integration)
+# =============================================================================
+
+class HairGenerator:
+    """Integrates GBH Tool for procedural hair generation"""
+    
+    def __init__(self):
+        self.hair_styles = {
+            'short': {
+                'length': 0.05,
+                'subdivisions': 2,
+                'children': 50,
+                'clump': 0.0,
+                'roughness': 0.1
+            },
+            'medium': {
+                'length': 0.15,
+                'subdivisions': 3,
+                'children': 100,
+                'clump': 0.1,
+                'roughness': 0.15
+            },
+            'long': {
+                'length': 0.35,
+                'subdivisions': 4,
+                'children': 150,
+                'clump': 0.2,
+                'roughness': 0.2
+            },
+            'very_long': {
+                'length': 0.6,
+                'subdivisions': 5,
+                'children': 200,
+                'clump': 0.25,
+                'roughness': 0.25
+            }
+        }
+        
+        self.hair_types = {
+            'straight': {'roughness': 0.0, 'clump': 0.0},
+            'wavy': {'roughness': 0.15, 'clump': 0.1},
+            'curly': {'roughness': 0.35, 'clump': 0.3},
+            'kinky': {'roughness': 0.5, 'clump': 0.4}
+        }
+        
+        self.hairstyles = {
+            'ponytail': 'ponytail',
+            'bun': 'bun',
+            'braids': 'braids',
+            'bob': 'bob',
+            'pixie': 'short',
+            'buzz': 'very_short',
+            'afro': 'afro'
+        }
+    
+    def detect_hair_features(self, prompt: str) -> Dict:
+        """Detect hair characteristics from prompt"""
+        prompt_lower = prompt.lower()
+        
+        features = {
+            'generate_hair': False,
+            'length': 'medium',
+            'type': 'straight',
+            'style': None,
+            'color': (0.05, 0.02, 0.01),  # Default dark brown
+            'density': 1.0
+        }
+        
+        # Check if hair is mentioned
+        hair_keywords = ['hair', 'hairstyle', 'haircut', 'locks', 'mane', 'tresses']
+        if any(keyword in prompt_lower for keyword in hair_keywords):
+            features['generate_hair'] = True
+        
+        # Detect length
+        if any(word in prompt_lower for word in ['long hair', 'flowing hair', 'lengthy']):
+            features['length'] = 'long'
+        elif any(word in prompt_lower for word in ['very long', 'extremely long', 'waist-length']):
+            features['length'] = 'very_long'
+        elif any(word in prompt_lower for word in ['short hair', 'cropped', 'pixie']):
+            features['length'] = 'short'
+        elif any(word in prompt_lower for word in ['medium hair', 'shoulder-length']):
+            features['length'] = 'medium'
+        
+        # Detect type
+        if any(word in prompt_lower for word in ['straight hair', 'silky', 'sleek']):
+            features['type'] = 'straight'
+        elif any(word in prompt_lower for word in ['wavy hair', 'waves']):
+            features['type'] = 'wavy'
+        elif any(word in prompt_lower for word in ['curly hair', 'curls', 'ringlets']):
+            features['type'] = 'curly'
+        elif any(word in prompt_lower for word in ['kinky', 'coily', 'afro textured']):
+            features['type'] = 'kinky'
+        
+        # Detect specific styles
+        for style_name, style_key in self.hairstyles.items():
+            if style_name in prompt_lower:
+                features['style'] = style_key
+                break
+        
+        # Detect color
+        color_map = {
+            'black': (0.01, 0.01, 0.01),
+            'dark brown': (0.05, 0.02, 0.01),
+            'brown': (0.15, 0.08, 0.04),
+            'light brown': (0.25, 0.15, 0.08),
+            'blonde': (0.8, 0.7, 0.4),
+            'red': (0.4, 0.1, 0.05),
+            'auburn': (0.3, 0.08, 0.03),
+            'white': (0.9, 0.9, 0.9),
+            'gray': (0.5, 0.5, 0.5),
+            'grey': (0.5, 0.5, 0.5)
+        }
+        
+        for color_name, rgb in color_map.items():
+            if f'{color_name} hair' in prompt_lower or f'{color_name}hair' in prompt_lower:
+                features['color'] = rgb
+                break
+        
+        # Detect density
+        if any(word in prompt_lower for word in ['thick hair', 'full hair', 'voluminous']):
+            features['density'] = 1.5
+        elif any(word in prompt_lower for word in ['thin hair', 'fine hair', 'sparse']):
+            features['density'] = 0.7
+        
+        return features
+    
+    def generate_hair_system(self, character_obj, hair_features: Dict) -> bool:
+        """Generate hair system using particle system"""
+        try:
+            # Select character
+            bpy.ops.object.select_all(action='DESELECT')
+            character_obj.select_set(True)
+            bpy.context.view_layer.objects.active = character_obj
+            
+            # Remove existing hair systems
+            for modifier in character_obj.modifiers:
+                if modifier.type == 'PARTICLE_SYSTEM':
+                    character_obj.modifiers.remove(modifier)
+            
+            # Clear particle systems
+            character_obj.particle_systems.clear()
+            
+            # Add new particle system
+            bpy.ops.object.particle_system_add()
+            particle_system = character_obj.particle_systems[-1]
+            settings = particle_system.settings
+            
+            # Get style parameters
+            length_params = self.hair_styles.get(hair_features['length'], self.hair_styles['medium'])
+            type_params = self.hair_types.get(hair_features['type'], self.hair_types['straight'])
+            
+            # Configure particle system as hair
+            settings.type = 'HAIR'
+            settings.count = int(1000 * hair_features['density'])
+            settings.hair_length = length_params['length']
+            settings.path_end = 1.0
+            
+            # Subdivisions for smoother hair
+            settings.render_step = length_params['subdivisions']
+            settings.display_step = length_params['subdivisions']
+            
+            # Hair dynamics
+            settings.use_advanced_hair = True
+            settings.clump_factor = max(length_params['clump'], type_params['clump'])
+            settings.roughness_1 = type_params['roughness']
+            settings.roughness_1_size = 0.5
+            settings.roughness_endpoint = 0.3
+            
+            # Children particles for volume
+            settings.child_type = 'INTERPOLATED'
+            settings.child_nbr = length_params['children']
+            settings.rendered_child_count = length_params['children'] * 2
+            settings.clump_factor = type_params['clump']
+            settings.clump_shape = 0.0
+            
+            # Set hair material
+            self.create_hair_material(character_obj, hair_features['color'])
+            
+            print(f"✓ Generated {hair_features['length']} {hair_features['type']} hair")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Hair generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def create_hair_material(self, obj, color: Tuple[float, float, float]):
+        """Create or update hair material"""
+        mat_name = "Hair_Material"
+        
+        # Get or create material
+        if mat_name in bpy.data.materials:
+            mat = bpy.data.materials[mat_name]
+        else:
+            mat = bpy.data.materials.new(name=mat_name)
+            mat.use_nodes = True
+        
+        # Clear existing nodes
+        nodes = mat.node_tree.nodes
+        nodes.clear()
+        
+        # Create nodes
+        output = nodes.new(type='ShaderNodeOutputMaterial')
+        output.location = (300, 0)
+        
+        bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+        bsdf.location = (0, 0)
+        
+        # Set hair color
+        bsdf.inputs['Base Color'].default_value = (*color, 1.0)
+        bsdf.inputs['Roughness'].default_value = 0.4
+        bsdf.inputs['Sheen Tint'].default_value = 0.5
+        
+        # Connect nodes
+        links = mat.node_tree.links
+        links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+        
+        # Assign material to particle system
+        if obj.data.materials:
+            obj.data.materials[0] = mat
+        else:
+            obj.data.materials.append(mat)
+        
+        print(f"✓ Created hair material with color RGB{color}")
+
+# =============================================================================
 # BLENDER HELPER FUNCTIONS
 # =============================================================================
 def get_object_by_gender(gender="male"):
     """Get the appropriate character object based on detected gender."""
     base_name = "mb_female" if gender == "female" else "mb_male"
     
-    # Try to find the exact object
     if base_name in bpy.data.objects:
         return bpy.data.objects[base_name]
     
-    # Try to find object with similar name
     for obj in bpy.data.objects:
         if obj.name.startswith(base_name):
             print(f"✓ Found character object: {obj.name}")
             return obj
     
-    # If gender-specific not found, try the opposite gender
     fallback_name = "mb_male" if gender == "female" else "mb_female"
     print(f"⚠️  {base_name} not found, trying fallback: {fallback_name}")
     
@@ -44,7 +268,7 @@ def get_object_by_gender(gender="male"):
             print(f"⚠️  Using fallback object: {obj.name}")
             return obj
     
-    print(f"✗ Could not find any character object (tried {base_name} and {fallback_name})")
+    print(f"✗ Could not find any character object")
     return None
 
 def reset_character_shape_keys(obj):
@@ -55,7 +279,7 @@ def reset_character_shape_keys(obj):
     print("--- Resetting all shape keys ---")
     reset_count = 0
     for kb in obj.data.shape_keys.key_blocks:
-        if kb.name != "Basis":  # Don't reset the Basis shape key
+        if kb.name != "Basis":
             kb.value = 0.0
             reset_count += 1
     print(f"✓ Reset {reset_count} shape keys")
@@ -72,11 +296,11 @@ def apply_morph(obj, shape_key_name, value):
         return False
 
 # =============================================================================
-# ENHANCED PROPERTY PROCESSING
+# ENHANCED PROPERTY PROCESSING WITH HAIR
 # =============================================================================
-def process_enhanced_properties(structured_data: Dict, character_obj, gender: str):
+def process_enhanced_properties(structured_data: Dict, character_obj, gender: str, prompt: str):
     """
-    Applies morphs from enhanced property mapping with gender awareness.
+    Applies morphs and generates hair from enhanced property mapping.
     """
     print(f"--- Starting Enhanced Property Processing for {gender.upper()} character ---")
     reset_character_shape_keys(character_obj)
@@ -86,28 +310,39 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
     
     print(f"Processing {len(properties)} properties from analysis...")
     
-    # Apply each property with its intensity value
+    # Apply morphs
     applied_count = 0
     failed_count = 0
-    applied_properties = []
-    failed_properties = []
     
     for property_name, intensity in properties.items():
         if apply_morph(character_obj, property_name, intensity):
             applied_count += 1
-            applied_properties.append(f"{property_name} ({intensity:.2f})")
         else:
             failed_count += 1
-            failed_properties.append(property_name)
+    
+    # Generate hair if mentioned in prompt
+    hair_generator = HairGenerator()
+    hair_features = hair_generator.detect_hair_features(prompt)
+    
+    hair_generated = False
+    if hair_features['generate_hair']:
+        print(f"\n--- Hair Generation Detected ---")
+        print(f"  Length: {hair_features['length']}")
+        print(f"  Type: {hair_features['type']}")
+        print(f"  Style: {hair_features.get('style', 'default')}")
+        print(f"  Color: RGB{hair_features['color']}")
+        print(f"  Density: {hair_features['density']}")
+        
+        hair_generated = hair_generator.generate_hair_system(character_obj, hair_features)
     
     bpy.context.view_layer.update()
     
     print(f"\n✓ Enhanced character generation complete!")
-    print(f"  - Applied {applied_count} properties successfully")
+    print(f"  - Applied {applied_count} morphs successfully")
     if failed_count > 0:
-        print(f"  - Failed to apply {failed_count} properties (not found in model)")
-        if failed_count <= 10:  # Only show failed properties if not too many
-            print(f"  - Failed properties: {', '.join(failed_properties[:10])}")
+        print(f"  - Failed to apply {failed_count} morphs")
+    if hair_generated:
+        print(f"  - Hair system generated successfully")
     
     # Print analysis summary
     if analysis:
@@ -119,7 +354,7 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
         if analysis.get('lifestyle_traits'):
             print(f"  - {analysis['lifestyle_traits']}")
     
-    return applied_count, failed_count
+    return applied_count, failed_count, hair_generated
 
 # =============================================================================
 # BRIDGE MONITORING FUNCTIONS
@@ -134,7 +369,7 @@ def start_bridge_monitoring():
    
     os.makedirs(COMMUNICATION_DIR, exist_ok=True)
    
-    print(f"🎭 Starting Enhanced Blender Bridge with Gender Detection...")
+    print(f"🎭 Starting Enhanced Blender Bridge with Hair Generation...")
     print(f"📁 Watching directory: {COMMUNICATION_DIR}")
     print("⏳ Waiting for character generation requests...")
    
@@ -160,7 +395,6 @@ def check_for_requests():
     
     try:
         if os.path.exists(REQUEST_FILE):
-            # Read the request
             with open(REQUEST_FILE, 'r') as f:
                 request_data = json.load(f)
            
@@ -180,7 +414,6 @@ def check_for_requests():
                 os.remove(REQUEST_FILE)
                 return 0.5
 
-            # Extract gender and ethnicity from structured data
             gender = structured_data.get('gender', 'male')
             ethnicity = structured_data.get('ethnicity', 'caucasian')
             
@@ -193,11 +426,12 @@ def check_for_requests():
             print(f"Properties to apply: {len(structured_data.get('properties', {}))}")
             print(f"{'='*60}\n")
            
-            # Get the appropriate character object based on gender
             character = get_object_by_gender(gender)
            
             if character:
-                applied, failed = process_enhanced_properties(structured_data, character, gender)
+                applied, failed, hair_gen = process_enhanced_properties(
+                    structured_data, character, gender, prompt
+                )
                
                 response_data = {
                     "timestamp": datetime.now().isoformat(),
@@ -205,9 +439,10 @@ def check_for_requests():
                     "gender": gender,
                     "ethnicity": ethnicity,
                     "status": "completed",
-                    "message": f"✓ {gender.capitalize()} character generated successfully!",
+                    "message": f"✓ {gender.capitalize()} character with hair generated!",
                     "properties_applied": applied,
                     "properties_failed": failed,
+                    "hair_generated": hair_gen,
                     "character_object": character.name
                 }
             else:
@@ -216,14 +451,12 @@ def check_for_requests():
                     "prompt": prompt,
                     "gender": gender,
                     "status": "error",
-                    "message": f"Could not find {gender} character object in Blender scene."
+                    "message": f"Could not find {gender} character object."
                 }
            
-            # Send response
             with open(RESPONSE_FILE, 'w') as f:
                 json.dump(response_data, f)
            
-            # Remove request file
             os.remove(REQUEST_FILE)
            
     except Exception as e:
@@ -249,7 +482,7 @@ def check_for_requests():
 # =============================================================================
 class MESH_PT_character_bridge(bpy.types.Panel):
     """Creates a Panel in the Object properties window"""
-    bl_label = "Enhanced Character Generator Bridge"
+    bl_label = "Enhanced Character Generator with Hair"
     bl_idname = "MESH_PT_character_bridge"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -273,9 +506,7 @@ class MESH_PT_character_bridge(bpy.types.Panel):
         box = layout.box()
         box.label(text="Testing", icon='EXPERIMENTAL')
         row = box.row()
-        row.operator("mesh.test_enhanced_generation")
-        row = box.row()
-        row.operator("mesh.test_female_generation")
+        row.operator("mesh.test_with_hair")
 
 class MESH_OT_start_bridge(bpy.types.Operator):
     """Start the bridge monitoring."""
@@ -284,7 +515,7 @@ class MESH_OT_start_bridge(bpy.types.Operator):
     
     def execute(self, context):
         start_bridge_monitoring()
-        self.report({'INFO'}, "Enhanced bridge monitoring started")
+        self.report({'INFO'}, "Enhanced bridge with hair generation started")
         return {'FINISHED'}
 
 class MESH_OT_stop_bridge(bpy.types.Operator):
@@ -297,54 +528,20 @@ class MESH_OT_stop_bridge(bpy.types.Operator):
         self.report({'INFO'}, "Bridge monitoring stopped")
         return {'FINISHED'}
 
-class MESH_OT_test_enhanced_generation(bpy.types.Operator):
-    """Test enhanced character generation with male sample."""
-    bl_idname = "mesh.test_enhanced_generation"
-    bl_label = "Test Male Generation"
+class MESH_OT_test_with_hair(bpy.types.Operator):
+    """Test character generation with hair."""
+    bl_idname = "mesh.test_with_hair"
+    bl_label = "Test with Hair"
     
     def execute(self, context):
-        test_structured_data = {
-            "properties": {
-                "L1_Asian": 0.8,
-                "L2__Eyes_Size_max": 0.7,
-                "L2_Asian_Nose_TipSize_min": 0.6,
-                "L2_Asian_Jaw_Angle_max": 0.8,
-                "L2__Body_Size_max": 0.6,
-                "L2__Arms_UpperarmMass-UpperarmTone_max-max": 0.7
-            },
-            "analysis": {
-                "analysis": "Test: Athletic Asian male"
-            },
-            "gender": "male",
-            "ethnicity": "asian"
-        }
-        
-        character = get_object_by_gender("male")
-        
-        if character:
-            process_enhanced_properties(test_structured_data, character, "male")
-            self.report({'INFO'}, "Male test generation completed!")
-        else:
-            self.report({'ERROR'}, "Male character object not found")
-        return {'FINISHED'}
-
-class MESH_OT_test_female_generation(bpy.types.Operator):
-    """Test enhanced character generation with female sample."""
-    bl_idname = "mesh.test_female_generation"
-    bl_label = "Test Female Generation"
-    
-    def execute(self, context):
+        test_prompt = "Create a young woman with long wavy brown hair, big eyes, and a warm smile."
         test_structured_data = {
             "properties": {
                 "L1_Caucasian": 0.8,
                 "L2__Eyes_Size_max": 0.8,
                 "L2_Caucasian_Mouth_UpperlipVolume_max": 0.7,
-                "L2__Body_Size_min": 0.5,
-                "L2_Caucasian_Cheeks_Zygom_max": 0.7
             },
-            "analysis": {
-                "analysis": "Test: Slender Caucasian female"
-            },
+            "analysis": {"analysis": "Test character with hair"},
             "gender": "female",
             "ethnicity": "caucasian"
         }
@@ -352,53 +549,33 @@ class MESH_OT_test_female_generation(bpy.types.Operator):
         character = get_object_by_gender("female")
         
         if character:
-            process_enhanced_properties(test_structured_data, character, "female")
-            self.report({'INFO'}, "Female test generation completed!")
+            process_enhanced_properties(test_structured_data, character, "female", test_prompt)
+            self.report({'INFO'}, "Test generation with hair completed!")
         else:
-            self.report({'ERROR'}, "Female character object not found")
+            self.report({'ERROR'}, "Character object not found")
         return {'FINISHED'}
 
 def register():
     bpy.utils.register_class(MESH_PT_character_bridge)
     bpy.utils.register_class(MESH_OT_start_bridge)
     bpy.utils.register_class(MESH_OT_stop_bridge)
-    bpy.utils.register_class(MESH_OT_test_enhanced_generation)
-    bpy.utils.register_class(MESH_OT_test_female_generation)
+    bpy.utils.register_class(MESH_OT_test_with_hair)
 
 def unregister():
     bpy.utils.unregister_class(MESH_PT_character_bridge)
     bpy.utils.unregister_class(MESH_OT_start_bridge)
     bpy.utils.unregister_class(MESH_OT_stop_bridge)
-    bpy.utils.unregister_class(MESH_OT_test_enhanced_generation)
-    bpy.utils.unregister_class(MESH_OT_test_female_generation)
+    bpy.utils.unregister_class(MESH_OT_test_with_hair)
 
-# Register classes
 register()
 
-# =============================================================================
-# AUTO-START AND MAIN EXECUTION
-# =============================================================================
 print("="*70)
-print("🎭 ENHANCED CHARACTER GENERATOR BRIDGE WITH GENDER DETECTION")
+print("🎭 ENHANCED CHARACTER GENERATOR WITH HAIR SYSTEM")
 print("="*70)
 print("Features:")
 print("  ✓ Automatic gender detection (male/female)")
-print("  ✓ Intelligent ethnicity mapping with best-fit fallback")
-print("  ✓ Minimum 30 properties per character")
+print("  ✓ Procedural hair generation")
+print("  ✓ Hair length, type, color, and style detection")
+print("  ✓ 30+ facial/body properties")
 print("  ✓ NLP + LLM enhanced analysis")
-print("  ✓ Cultural context awareness")
-print()
-print("Available Character Objects:")
-for obj in bpy.data.objects:
-    if 'mb_' in obj.name.lower():
-        print(f"  ✓ {obj.name}")
-print()
-print("Instructions:")
-print("1. Run the enhanced frontend.py script")
-print("2. Click 'Start Bridge' in Blender")
-print("3. Open http://127.0.0.1:5000")
-print("4. Generate male or female characters with detailed descriptions!")
 print("="*70)
-
-# Optional: Uncomment to auto-start monitoring
-# start_bridge_monitoring()

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Character Generator</title>
+    <title>Character Generator with Hair</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -39,6 +39,10 @@
             font-size: 12px;
             margin: 2px;
             font-weight: 600;
+        }
+        .feature-badge.hair {
+            background: #fff3cd;
+            color: #856404;
         }
         .input-group {
             margin-bottom: 20px;
@@ -81,10 +85,6 @@
             color: #28a745;
             font-weight: 600;
         }
-        .status-warning {
-            color: #ffc107;
-            font-weight: 600;
-        }
         .status-bad {
             color: #dc3545;
             font-weight: 600;
@@ -108,11 +108,6 @@
         }
         .start-blender-btn:hover {
             transform: translateY(-2px);
-        }
-        .start-blender-btn:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-            transform: none;
         }
         .generate-btn {
             flex: 2;
@@ -167,6 +162,28 @@
             margin-top: 0;
             color: #17a2b8;
         }
+        .hair-info {
+            background: #fff3cd;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            border-left: 4px solid #856404;
+        }
+        .hair-info h5 {
+            margin: 0 0 8px 0;
+            color: #856404;
+        }
+        .hair-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 14px;
+        }
+        .hair-detail-item {
+            padding: 6px;
+            background: white;
+            border-radius: 4px;
+        }
         .character-info {
             display: flex;
             gap: 20px;
@@ -214,6 +231,9 @@
             background: #e9ecef;
             border-color: #667eea;
         }
+        .example-prompt.hair-example {
+            border-left: 4px solid #ffc107;
+        }
         .loading-spinner {
             display: inline-block;
             width: 20px;
@@ -231,12 +251,12 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎭 Enhanced AI Character Generator</h1>
+        <h1>🎭 AI Character Generator with Hair</h1>
         <div class="subtitle">
             <span class="feature-badge">Gender Detection</span>
             <span class="feature-badge">Ethnicity Mapping</span>
             <span class="feature-badge">30+ Properties</span>
-            <span class="feature-badge">NLP + LLM</span>
+            <span class="feature-badge hair">💇 Hair Generation</span>
         </div>
         
         <div class="system-status" id="systemStatus">
@@ -245,22 +265,18 @@
                 <span id="blenderStatus" class="status-bad">Not Connected</span>
             </div>
             <div class="status-item">
+                <span>Hair System:</span>
+                <span id="hairStatus" class="status-good">✅ Available</span>
+            </div>
+            <div class="status-item">
                 <span>Properties Loaded:</span>
                 <span id="propertiesStatus" class="status-bad">Loading...</span>
-            </div>
-            <div class="status-item">
-                <span>LLM Status:</span>
-                <span id="llmStatus" class="status-bad">Checking...</span>
-            </div>
-            <div class="status-item">
-                <span>NLP Status:</span>
-                <span id="nlpStatus" class="status-bad">Checking...</span>
             </div>
         </div>
         
         <div class="input-group">
-            <label for="prompt">Describe your character in detail:</label>
-            <textarea id="prompt" placeholder="Example: Create a young Indian woman with expressive brown eyes, long wavy hair, and a warm smile. She has a slender athletic build from yoga practice, high cheekbones, and olive skin. She works as a teacher and has an energetic, friendly demeanor."></textarea>
+            <label for="prompt">Describe your character (include hair details!):</label>
+            <textarea id="prompt" placeholder="Example: Create a young woman with long wavy brown hair, expressive eyes, and a warm smile. She has a slender build and works as a yoga instructor."></textarea>
         </div>
         
         <div class="button-group">
@@ -276,12 +292,31 @@
         <div id="analysisResult" class="analysis-result" style="display: none;"></div>
         
         <div class="examples">
-            <h3>💡 Example Prompts (click to use):</h3>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate a young Indian woman with expressive brown eyes, long wavy hair, and a warm smile. She has a slender athletic build from yoga practice, high cheekbones, and olive skin. She works as a teacher and has an energetic, friendly demeanor.</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create an elderly wise African man with a long white beard, deep thoughtful eyes, and weathered features. He has a stocky build, broad nose, full lips, and carries himself with quiet dignity.</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Make a young Japanese woman with delicate features, straight black hair, and porcelain skin. She has a petite slim build, small nose, and gentle almond-shaped eyes. She's a software engineer with a quiet, focused personality.</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Generate a muscular African American athlete with broad shoulders, defined jaw, and powerful build. He has short hair, wide nose, full lips, and an intense, competitive expression.</div>
-            <div class="example-prompt" onclick="setPrompt(this.textContent)">Create a middle-aged European woman with wavy blonde hair, blue eyes, and fair skin. She has a curvy build, soft features, and laugh lines around her eyes. She's a chef who enjoys good food and life.</div>
+            <h3>💡 Example Prompts with Hair (click to use):</h3>
+            
+            <div class="example-prompt hair-example" onclick="setPrompt(this.textContent)">
+                Create a young Indian woman with long wavy black hair, expressive brown eyes, and a warm smile. She has a slender athletic build from yoga practice, high cheekbones, and olive skin.
+            </div>
+            
+            <div class="example-prompt hair-example" onclick="setPrompt(this.textContent)">
+                Generate an elderly wise African man with short gray hair, a white beard, deep thoughtful eyes, and weathered features. He has a stocky build, broad nose, and carries himself with quiet dignity.
+            </div>
+            
+            <div class="example-prompt hair-example" onclick="setPrompt(this.textContent)">
+                Make a young Japanese woman with straight shoulder-length black hair, delicate features, and porcelain skin. She has a petite slim build, small nose, and gentle almond-shaped eyes.
+            </div>
+            
+            <div class="example-prompt hair-example" onclick="setPrompt(this.textContent)">
+                Create a muscular African American athlete with a short buzz cut, broad shoulders, defined jaw, and powerful build. He has an intense, competitive expression and strong features.
+            </div>
+            
+            <div class="example-prompt hair-example" onclick="setPrompt(this.textContent)">
+                Generate a middle-aged European woman with medium-length curly blonde hair, blue eyes, and fair skin. She has a curvy build, soft features, and laugh lines around her eyes.
+            </div>
+            
+            <div class="example-prompt hair-example" onclick="setPrompt(this.textContent)">
+                Create a young man with long flowing red hair, pale skin, and sharp angular features. He's tall and lean with piercing green eyes and an artistic, bohemian appearance.
+            </div>
         </div>
     </div>
 
@@ -317,23 +352,30 @@
                      </div>`;
             html += '</div>';
             
-            if (data.character_object) {
-                html += `<p style="margin-top: 10px;"><strong>Blender Object:</strong> ${data.character_object}</p>`;
-            }
-            
-            if (data.llm_analysis && data.llm_analysis.analysis) {
-                html += `<p><strong>Analysis:</strong> ${data.llm_analysis.analysis}</p>`;
-            }
-            
-            if (data.features_detected && data.features_detected.length > 0) {
-                html += `<p><strong>Detected Features:</strong><br>`;
-                data.features_detected.slice(0, 10).forEach(feature => {
-                    html += `<span class="feature-badge">${feature}</span>`;
-                });
-                if (data.features_detected.length > 10) {
-                    html += `<span class="feature-badge">+${data.features_detected.length - 10} more</span>`;
+            // Hair information
+            if (data.hair_data && data.hair_data.has_hair_description) {
+                html += '<div class="hair-info">';
+                html += '<h5>💇 Hair Generated:</h5>';
+                html += '<div class="hair-details">';
+                
+                if (data.hair_data.length) {
+                    html += `<div class="hair-detail-item"><strong>Length:</strong> ${data.hair_data.length}</div>`;
                 }
-                html += `</p>`;
+                if (data.hair_data.type) {
+                    html += `<div class="hair-detail-item"><strong>Type:</strong> ${data.hair_data.type}</div>`;
+                }
+                if (data.hair_data.style) {
+                    html += `<div class="hair-detail-item"><strong>Style:</strong> ${data.hair_data.style}</div>`;
+                }
+                if (data.hair_data.color) {
+                    html += `<div class="hair-detail-item"><strong>Color:</strong> ${data.hair_data.color}</div>`;
+                }
+                if (data.hair_data.density) {
+                    html += `<div class="hair-detail-item"><strong>Density:</strong> ${data.hair_data.density}</div>`;
+                }
+                
+                html += '</div>';
+                html += '</div>';
             }
             
             analysisDiv.innerHTML = html;
@@ -355,20 +397,10 @@
                 document.getElementById('propertiesStatus').className = 
                     data.properties_loaded ? 'status-good' : 'status-bad';
                 
-                document.getElementById('llmStatus').textContent = 
-                    data.llm_available ? '✅ Available' : '⚠️ Limited';
-                document.getElementById('llmStatus').className = 
-                    data.llm_available ? 'status-good' : 'status-warning';
-                
-                document.getElementById('nlpStatus').textContent = 
-                    data.nlp_available ? '✅ Available' : '❌ Not Available';
-                document.getElementById('nlpStatus').className = 
-                    data.nlp_available ? 'status-good' : 'status-warning';
-                
                 const blenderBtn = document.querySelector('.start-blender-btn');
                 const generateBtn = document.querySelector('.generate-btn');
                 
-                if (data.blender_started_once) {
+                if (data.blender_running) {
                     blenderBtn.innerHTML = '✅ Blender Running';
                     blenderBtn.disabled = true;
                     generateBtn.disabled = false;
@@ -388,7 +420,7 @@
             
             button.disabled = true;
             button.innerHTML = '<span class="loading-spinner"></span> Starting Blender...';
-            showStatus('Starting Blender with character models...', 'loading');
+            showStatus('Starting Blender with hair generation support...', 'loading');
             
             try {
                 const response = await fetch('/start-blender', {
@@ -423,8 +455,8 @@
             }
             
             button.disabled = true;
-            button.innerHTML = '<span class="loading-spinner"></span> Analyzing & Generating...';
-            showStatus('🔍 Detecting gender & ethnicity... 🧠 Analyzing features... 🎨 Generating character...', 'loading');
+            button.innerHTML = '<span class="loading-spinner"></span> Generating...';
+            showStatus('🔍 Analyzing features... 💇 Detecting hair... 🎨 Generating character...', 'loading');
             
             try {
                 const response = await fetch('/generate', {
@@ -436,7 +468,11 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showStatus(`✅ ${data.message}`, 'success');
+                    let message = data.message;
+                    if (data.hair_generated) {
+                        message += ' with procedural hair!';
+                    }
+                    showStatus(`✅ ${message}`, 'success');
                     showAnalysis(data);
                 } else {
                     showStatus(`❌ ${data.error}`, 'error');
