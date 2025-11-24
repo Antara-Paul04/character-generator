@@ -7,6 +7,27 @@ from datetime import datetime
 import time
 from typing import Dict, List, Tuple, Optional
 import traceback
+import shutil
+import subprocess
+import uuid
+
+
+# ---------- Path to the uploaded reference image (from your session) ----------
+REFERENCE_IMAGE_PATH = r"/mnt/data/d4f73a0c-9148-4e7b-a5d1-d0e67cac2171.png"
+
+# ---------- HairNet integration configuration ----------
+# Point this to the local hairnet-ai repo (adjust to your install path)
+HAIRNET_REPO_PATH = r"C:\path\to\hairnet-ai"  # <<-- CHANGE THIS to your repo path
+# Template command used to run hairnet. Replace flags with the actual script your installation uses.
+# The placeholders will be filled in by run_hairnet_pipeline()
+HAIRNET_CMD_TEMPLATE = (
+    r"python {repo}/run_hairnet.py "
+    r"--head {head_obj} "
+    r"--init_mesh {hair_obj} "
+    r"--scalp {scalp_obj} "
+    r"--outdir {outdir} "
+    r"--style '{style}' "
+)
 
 # =============================================================================
 # BLENDER BRIDGE CONFIGURATION
@@ -385,6 +406,223 @@ def stop_bridge_monitoring():
     update_status("stopped")
     log("Bridge monitoring stopped.")
 
+
+# Utility: create a unique temp folder for each run
+def _make_temp_dir(prefix="hairnet_run"):
+    tmp = os.path.join(COMMUNICATION_DIR, f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}")
+    os.makedirs(tmp, exist_ok=True)
+    return tmp
+
+# Export a selected object to OBJ file (with modifiers applied if requested)
+def export_object_as_obj(obj, filepath, apply_modifiers=False):
+    # Deselect all, select provided, export
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
+    export_kwargs = {
+        "filepath": filepath,
+        "use_selection": True,
+        "use_mesh_modifiers": apply_modifiers,
+        "axis_forward": "-Z",
+        "axis_up": "Y",
+        "use_triangles": False,
+        "use_normals": True,
+        "use_uvs": True,
+        "use_materials": False
+    }
+    bpy.ops.export_scene.obj(**export_kwargs)
+    log(f"Exported OBJ: {filepath}")
+
+# Export a vertex-group-only mesh as OBJ (duplicate head, delete other verts)
+def export_vertex_group_to_obj(character_obj, vertex_group_name, filepath):
+    try:
+        bpy.ops.object.select_all(action='DESELECT')
+        character_obj.select_set(True)
+        bpy.context.view_layer.objects.active = character_obj
+
+        # Duplicate object
+        bpy.ops.object.duplicate()
+        dup = bpy.context.active_object
+        dup.name = f"{character_obj.name}_scalp_export"
+
+        # Enter edit mode and delete vertices not in vertex group
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.vertex_group_set_active(group=vertex_group_name)
+        bpy.ops.object.vertex_group_select()
+        # Invert selection and delete everything else
+        bpy.ops.mesh.select_all(action='INVERT')
+        bpy.ops.mesh.delete(type='VERT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Export duplicate as OBJ
+        export_object_as_obj(dup, filepath, apply_modifiers=False)
+
+        # Remove duplicate from scene
+        bpy.data.objects.remove(dup, do_unlink=True)
+        log(f"Exported vertex-group OBJ for '{vertex_group_name}' to {filepath}")
+        return True
+    except Exception as e:
+        log(f"Failed to export vertex group to OBJ: {e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return False
+
+# Run the HairNet subprocess command
+def run_hairnet_subprocess(cmd):
+    try:
+        log(f"Running HairNet command:\n{cmd}")
+        completed = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=HAIRNET_REPO_PATH, timeout=300)
+        log("HairNet stdout:\n" + completed.stdout)
+        if completed.returncode != 0:
+            log("HairNet stderr:\n" + completed.stderr, "ERROR")
+            return False, completed.stdout + "\n" + completed.stderr
+        return True, completed.stdout
+    except subprocess.TimeoutExpired:
+        log("HairNet process timed out", "ERROR")
+        return False, "timeout"
+    except Exception as e:
+        log(f"Error running HairNet: {e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return False, str(e)
+
+# Import the generated hair OBJ back into the Blender scene and nest it
+def import_hair_obj_and_setup(obj_filepath, target_character_obj, collection_name="HairNet_Output"):
+    try:
+        # Import
+        bpy.ops.import_scene.obj(filepath=obj_filepath)
+        # Imported objects are selected; gather them
+        imported = [o for o in bpy.context.selected_objects if o.type == 'MESH']
+        if not imported:
+            log("No mesh imported from HairNet output", "ERROR")
+            return None
+
+        # Create collection to hold imported hair
+        coll = bpy.data.collections.get(collection_name)
+        if not coll:
+            coll = bpy.data.collections.new(collection_name)
+            bpy.context.scene.collection.children.link(coll)
+
+        for o in imported:
+            # Move to collection
+            for c in o.users_collection:
+                c.objects.unlink(o)
+            coll.objects.link(o)
+            # Parent to head (keep transform)
+            o.parent = target_character_obj
+            o.matrix_parent_inverse = target_character_obj.matrix_world.inverted()
+            o.name = f"hairnet_{o.name}"
+            # Optionally add shrinkwrap to keep it on scalp
+            sw = o.modifiers.new(name="HR_Shrinkwrap", type='SHRINKWRAP')
+            sw.target = target_character_obj
+            sw.wrap_method = 'NEAREST_SURFACEPOINT'
+            sw.offset = 0.001
+            log(f"Imported hair object: {o.name}")
+
+        # Deselect all
+        bpy.ops.object.select_all(action='DESELECT')
+        return imported
+    except Exception as e:
+        log(f"Failed to import hair OBJ: {e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return None
+
+# High-level pipeline to run HairNet and re-import result
+def run_hairnet_pipeline(character_obj, hair_obj=None, hair_params=None, prompt_text=None):
+    """
+    character_obj: Blender object representing head
+    hair_obj: Blender object to use as initial hair (optional)
+    hair_params: dict with keys like 'style' or 'length' mapped to hairnet style
+    prompt_text: textual style prompt to pass to hairnet (if supported)
+    """
+    tmpdir = _make_temp_dir("hairnet")
+    head_path = os.path.join(tmpdir, "head.obj")
+    init_hair_path = os.path.join(tmpdir, "init_hair.obj")
+    scalp_path = os.path.join(tmpdir, "scalp.obj")
+    out_dir = os.path.join(tmpdir, "output")
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Export head
+    export_object_as_obj(character_obj, head_path, apply_modifiers=True)
+
+    # Export hair if provided, else create a simple proxy plane/object from vertex group
+    if hair_obj:
+        export_object_as_obj(hair_obj, init_hair_path, apply_modifiers=True)
+    else:
+        # create a simple placeholder export (empty OBJ) - HairNet may accept missing init mesh
+        open(init_hair_path, 'w').close()
+        log("No initial hair mesh provided; passing empty init mesh")
+
+    # Ensure a vertex group for the head scalp exists (create if missing)
+    vg_name = "Hair_Region"
+    if vg_name not in character_obj.vertex_groups:
+        create_head_vertex_group_safe(character_obj)
+
+    if not export_vertex_group_to_obj(character_obj, "Hair_Region", scalp_path):
+        log("Failed to export scalp vertex group; proceeding without scalp (may reduce quality).", "WARNING")
+
+    # Build style string from parameters
+    style = ""
+    if hair_params:
+        # map basic params to a simple style string. Customize as you like
+        if hair_params.get("style"):
+            style = hair_params.get("style")
+        else:
+            # Example: length and curl
+            length = hair_params.get("length", hair_params.get("particle_length", 0.5))
+            curl = hair_params.get("curl_intensity", 0.0)
+            style = f"length={length},curl={curl}"
+
+    if prompt_text:
+        style = (style + " " + prompt_text) if style else prompt_text
+
+    # Optional: copy reference image into tmpdir for visual guidance (if hairnet supports)
+    if os.path.exists(REFERENCE_IMAGE_PATH):
+        try:
+            shutil.copy(REFERENCE_IMAGE_PATH, os.path.join(tmpdir, os.path.basename(REFERENCE_IMAGE_PATH)))
+            log(f"Copied reference image to run dir: {REFERENCE_IMAGE_PATH}")
+        except Exception as e:
+            log(f"Couldn't copy reference image: {e}", "WARNING")
+
+    # Build command (replace placeholders)
+    cmd = HAIRNET_CMD_TEMPLATE.format(
+        repo=HAIRNET_REPO_PATH,
+        head_obj=head_path,
+        hair_obj=init_hair_path,
+        scalp_obj=scalp_path,
+        outdir=out_dir,
+        style=style.replace("'", "\"")
+    )
+
+    success, output = run_hairnet_subprocess(cmd)
+    if not success:
+        log("HairNet failed. See logs above.", "ERROR")
+        return False
+
+    # Attempt to find output hair OBJ (common filename - adjust if your HairNet uses different name)
+    # We'll search out_dir for any OBJ and import the first one found
+    hair_output_obj = None
+    for root, _, files in os.walk(out_dir):
+        for f in files:
+            if f.lower().endswith(".obj"):
+                hair_output_obj = os.path.join(root, f)
+                break
+        if hair_output_obj:
+            break
+
+    if not hair_output_obj:
+        log("No hair OBJ found in HairNet output directory", "ERROR")
+        return False
+
+    imported = import_hair_obj_and_setup(hair_output_obj, character_obj, collection_name="HairNet_Output")
+    if imported:
+        log("✅ HairNet integration pipeline completed and hair imported.")
+        return True
+    else:
+        log("✗ HairNet finished but import failed.", "ERROR")
+        return False
+
+
 def check_for_requests():
     """Timer function that checks for new character requests"""
     global is_monitoring
@@ -446,11 +684,14 @@ def check_for_requests():
         hair_success = False
         hair_method = 'none'
         
+                # STEP 2: Apply hair if requested
+        hair_success = False
+        hair_method = 'none'
+
         if has_hair:
             log("\nProcessing hair generation...")
             time.sleep(0.3)  # Brief pause to ensure body updates complete
-            
-            # Get hair parameters
+
             hair_params = structured_data.get('hair_params', {})
             if not hair_params:
                 log("Using default hair parameters", "WARNING")
@@ -458,18 +699,31 @@ def check_for_requests():
                     'particle_count': 5000,
                     'particle_length': 0.5,
                     'curl_intensity': 0.0,
-                    'randomness': 0.3
+                    'randomness': 0.3,
+                    'engine': 'particle_system'
                 }
-            
-            hair_success = create_simple_hair_system(character, hair_params)
-            hair_method = 'particle_system' if hair_success else 'failed'
-            
-            if hair_success:
-                log(f"\n✅ Hair applied successfully!")
+
+            # Choose engine: 'hairnet' to use HairNet-AI, otherwise fallback to particle system
+            requested_engine = hair_params.get('engine', 'particle_system').lower()
+
+            if requested_engine == 'hairnet':
+                # Attempt to run hairnet pipeline
+                try:
+                    prompt_text = request_data.get('prompt', None)
+                    hair_success = run_hairnet_pipeline(character, hair_obj=None, hair_params=hair_params, prompt_text=prompt_text)
+                    hair_method = 'hairnet' if hair_success else 'hairnet_failed'
+                except Exception as e:
+                    log(f"HairNet pipeline exception: {e}", "ERROR")
+                    hair_method = 'hairnet_failed'
             else:
-                log(f"\n⚠️  Hair generation failed", "WARNING")
-        else:
-            log("\nℹ️  No hair requested")
+                hair_success = create_simple_hair_system(character, hair_params)
+                hair_method = 'particle_system' if hair_success else 'failed'
+
+            if hair_success:
+                log(f"\n✅ Hair applied successfully! (method={hair_method})")
+            else:
+                log(f"\n⚠️  Hair generation failed (method={hair_method})", "WARNING")
+
         
         # Send success response
         response_data = {
