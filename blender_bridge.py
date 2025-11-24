@@ -162,7 +162,7 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
 # HAIR GENERATION (STEP 2) - SIMPLIFIED VERSION
 # =============================================================================
 def create_simple_hair_system(character_obj, hair_params):
-    """Create particle hair system - SIMPLIFIED AND ROBUST"""
+    """Create particle hair system - UPDATED WITH BETTER HEAD DETECTION"""
     try:
         log(f"\n{'='*60}")
         log(f"STEP 2: CREATING HAIR SYSTEM")
@@ -174,9 +174,11 @@ def create_simple_hair_system(character_obj, hair_params):
         log(f"Set active object: {character_obj.name}")
         
         # Remove any existing hair systems
-        while len(character_obj.particle_systems) > 0:
+        existing_systems = [psys.name for psys in character_obj.particle_systems]
+        for psys_name in existing_systems:
+            character_obj.particle_systems.active_index = 0
             bpy.ops.object.particle_system_remove()
-        log("Cleared existing particle systems")
+        log(f"Cleared {len(existing_systems)} existing particle systems")
         
         # Add particle system
         log("Adding particle system...")
@@ -203,36 +205,45 @@ def create_simple_hair_system(character_obj, hair_params):
         
         log(f"✓ Configured: {settings.count} particles, length {settings.hair_length}")
         
-        # Add children for volume
-        settings.child_nbr = max(100, int(settings.count * 0.1))
-        settings.child_length = 1.0
-        settings.child_radius = float(randomness)
+        # Add children for volume but fewer to reduce body coverage
+        settings.child_nbr = max(50, int(settings.count * 0.05))  # Reduced from 0.1
+        settings.child_length = 0.8  # Reduced from 1.0
+        settings.child_radius = float(randomness) * 0.5  # Reduced randomness
         
         log(f"✓ Added child particles: {settings.child_nbr}")
         
         # Set curl if needed
         if curl_intensity > 0:
             settings.child_type = 'INTERPOLATED'
-            settings.clump_factor = 0.2 + curl_intensity * 0.3
-            settings.roughness_1 = curl_intensity
+            settings.clump_factor = 0.1 + curl_intensity * 0.2  # Reduced
+            settings.roughness_1 = curl_intensity * 0.8  # Reduced
             log(f"✓ Set curl intensity: {curl_intensity}")
         
-        # Try to limit to head region (optional, won't fail if doesn't work)
-        try:
-            vertex_group = create_head_vertex_group_safe(character_obj)
-            if vertex_group:
-                psys.vertex_group_density = vertex_group
-                log(f"✓ Limited hair to vertex group: {vertex_group}")
-        except Exception as e:
-            log(f"⚠ Could not limit hair to head (will cover whole body): {e}", "WARNING")
+        # CRITICAL: Limit to head region
+        vertex_group = create_head_vertex_group_safe(character_obj)
+        if vertex_group:
+            settings.vertex_group_density = vertex_group
+            # Also limit children to the same region
+            settings.vertex_group_clump = vertex_group  
+            settings.vertex_group_length = vertex_group
+            log(f"✓ LIMITED HAIR TO HEAD REGION: {vertex_group}")
+        else:
+            log("⚠ WARNING: Using full body for hair (no vertex group)", "WARNING")
+        
+        # Additional settings to contain hair
+        settings.use_even_distribution = True
+        settings.use_modifier_stack = True
+        settings.use_hair_dynamics = False  # Disable physics for stability
         
         # Force update
         bpy.context.view_layer.update()
+        time.sleep(0.5)  # Give Blender time to process
         
         log(f"\n✅ HAIR SYSTEM CREATED SUCCESSFULLY!")
         log(f"   System name: {psys.name}")
         log(f"   Particle count: {settings.count}")
         log(f"   Hair length: {settings.hair_length}")
+        log(f"   Limited to head: {'YES' if vertex_group else 'NO'}")
         
         return True
         
@@ -242,34 +253,62 @@ def create_simple_hair_system(character_obj, hair_params):
         return False
 
 def create_head_vertex_group_safe(character_obj):
-    """Create vertex group for head region - safe version that won't crash"""
+    """Create vertex group for head region - IMPROVED VERSION"""
     try:
         mesh = character_obj.data
         
-        # Remove existing hair vertex group
+        # Remove existing hair vertex group if it exists
         if "Hair_Region" in character_obj.vertex_groups:
             character_obj.vertex_groups.remove(character_obj.vertex_groups["Hair_Region"])
         
+        # Create new vertex group
         hair_group = character_obj.vertex_groups.new(name="Hair_Region")
         
-        # Simple approach: select top 15% of vertices by Z coordinate
+        # Get world coordinates and find head region
         vertices = mesh.vertices
         world_matrix = character_obj.matrix_world
         
-        # Get all Z coordinates
+        # Find character bounds to determine head region
         z_coords = [(i, (world_matrix @ v.co).z) for i, v in enumerate(vertices)]
         z_coords.sort(key=lambda x: x[1], reverse=True)
         
-        # Take top 15%
-        num_head_verts = max(100, int(len(vertices) * 0.15))
-        head_vertex_indices = [idx for idx, z in z_coords[:num_head_verts]]
+        # Calculate head region more precisely
+        max_z = z_coords[0][1] if z_coords else 0
+        min_z = z_coords[-1][1] if z_coords else 0
+        total_height = max_z - min_z
         
-        # Add to group
-        hair_group.add(head_vertex_indices, 1.0, 'ADD')
+        # Head is approximately top 20% of character height
+        head_threshold = max_z - (total_height * 0.2)
         
-        log(f"✓ Created Hair_Region with {len(head_vertex_indices)} vertices")
-        return "Hair_Region"
+        # Also consider Y coordinate to exclude sides/back that are too low
+        head_vertex_indices = []
         
+        for i, vertex in enumerate(vertices):
+            world_coord = world_matrix @ vertex.co
+            # Select vertices in top 20% by height AND not too far back/front
+            if (world_coord.z >= head_threshold and 
+                abs(world_coord.y) < total_height * 0.3):  # Limit width
+                head_vertex_indices.append(i)
+        
+        # If we didn't get enough vertices, be less restrictive
+        if len(head_vertex_indices) < 100:
+            head_vertex_indices = []
+            for i, (vertex_idx, z_val) in enumerate(z_coords[:int(len(vertices) * 0.15)]):
+                head_vertex_indices.append(vertex_idx)
+        
+        # Add vertices to group with weight 1.0
+        if head_vertex_indices:
+            hair_group.add(head_vertex_indices, 1.0, 'REPLACE')
+            log(f"✓ Created Hair_Region with {len(head_vertex_indices)} vertices")
+            return "Hair_Region"
+        else:
+            # Fallback: use top 10% of vertices by Z coordinate
+            log("Using fallback head detection", "WARNING")
+            top_vertices = [idx for idx, z in z_coords[:max(50, int(len(vertices) * 0.1))]]
+            hair_group.add(top_vertices, 1.0, 'REPLACE')
+            log(f"✓ Created fallback Hair_Region with {len(top_vertices)} vertices")
+            return "Hair_Region"
+            
     except Exception as e:
         log(f"⚠ Vertex group creation failed: {e}", "WARNING")
         return None

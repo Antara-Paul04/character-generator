@@ -38,8 +38,16 @@ class HairNetIntegrator:
             
             # Save parameters to temporary file
             params_file = os.path.join(output_dir, f"{character_name}_hair_params.json")
+            
+            # REDUCE PARAMETERS FOR LESS HAIR COVERAGE
+            reduced_hair_params = hair_params.copy()
+            if 'particle_count' in reduced_hair_params:
+                reduced_hair_params['particle_count'] = int(reduced_hair_params['particle_count'] * 0.7)  # Reduce by 30%
+            if 'particle_length' in reduced_hair_params:
+                reduced_hair_params['particle_length'] = reduced_hair_params['particle_length'] * 0.8  # Reduce length
+            
             with open(params_file, 'w') as f:
-                json.dump(hair_params, f)
+                json.dump(reduced_hair_params, f)
             
             # Run HairNet generation
             cmd = [
@@ -99,16 +107,16 @@ class MockHairNetIntegrator:
             'message': 'Using Blender particle system for hair'
         }
         
-        # Add particle system parameters based on hair description
+        # REDUCED PARTICLE COUNTS AND LENGTHS
         if hair_params.get('length') == 'long':
-            hair_data['particle_count'] = 8000
-            hair_data['particle_length'] = 0.8
+            hair_data['particle_count'] = 6000  # Reduced from 8000
+            hair_data['particle_length'] = 0.7  # Reduced from 0.8
         elif hair_params.get('length') == 'short':
-            hair_data['particle_count'] = 4000
-            hair_data['particle_length'] = 0.3
+            hair_data['particle_count'] = 3000  # Reduced from 4000
+            hair_data['particle_length'] = 0.2  # Reduced from 0.3
         else:  # medium
-            hair_data['particle_count'] = 6000
-            hair_data['particle_length'] = 0.5
+            hair_data['particle_count'] = 4500  # Reduced from 6000
+            hair_data['particle_length'] = 0.4  # Reduced from 0.5
         
         # Style adjustments
         if hair_params.get('style') == 'curly':
@@ -121,13 +129,20 @@ class MockHairNetIntegrator:
             hair_data['curl_intensity'] = 0.0
             hair_data['randomness'] = 0.1
         
-        # Volume adjustments
+        # REDUCED VOLUME ADJUSTMENTS
         if hair_params.get('volume') == 'thick':
-            hair_data['particle_count'] *= 1.5
-            hair_data['child_radius'] = 0.4
+            hair_data['particle_count'] *= 1.2  # Reduced from 1.5
+            hair_data['child_radius'] = 0.2     # Reduced from 0.4
         elif hair_params.get('volume') == 'thin':
-            hair_data['particle_count'] *= 0.7
-            hair_data['child_radius'] = 0.1
+            hair_data['particle_count'] *= 0.8  # Increased from 0.7
+            hair_data['child_radius'] = 0.05    # Reduced from 0.1
+        else:  # normal volume
+            hair_data['child_radius'] = 0.1     # Added default
+        
+        # ADDITIONAL SETTINGS FOR BETTER HEAD CONTAINMENT
+        hair_data['child_nbr'] = max(50, int(hair_data['particle_count'] * 0.05))  # Only 5% children
+        hair_data['child_length'] = 0.8  # Reduced child length
         
         print(f"✅ Mock hair data generated: {hair_data['method']}")
+        print(f"   Particles: {hair_data['particle_count']}, Length: {hair_data['particle_length']}")
         return hair_data
