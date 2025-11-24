@@ -979,6 +979,35 @@ def generate_character():
             print("\nℹ Step 5: Skipped (no hair description)")
         
         # STEP 6: Prepare data for Blender
+        # CRITICAL: Ensure minimum 30 properties for Blender
+        if len(final_properties) < 30:
+            print(f"⚠️ WARNING: Only {len(final_properties)} properties. Adding more...")
+            # Add more default properties
+            additional_defaults = [
+                'L2__Arms_ForearmLength_max', 'L2__Arms_ForearmLength_min',
+                'L2__Legs_LowerlegLength_max', 'L2__Legs_LowerlegLength_min',
+                'L2__Neck_Size_max', 'L2__Neck_Size_min',
+                'L2__Shoulders_Size_max', 'L2__Shoulders_Size_min',
+                'L2__Waist_Size_max', 'L2__Waist_Size_min'
+            ]
+            for prop in additional_defaults:
+                if prop not in final_properties and len(final_properties) < 30:
+                    final_properties[prop] = 0.5
+            print(f"✓ Increased to {len(final_properties)} properties")
+        
+        # Prepare hair data in correct format for Blender
+        hair_data_for_blender = None
+        if hair_params and hair_generation_result:
+            hair_data_for_blender = {
+                'has_hair': True,
+                'hair_params': hair_generation_result,  # This contains the full mock data
+                'hair_generation': {
+                    'success': hair_generation_result.get('success', False),
+                    'output_path': hair_generation_result.get('output_path'),
+                    'mock': hair_generation_result.get('mock', True)
+                }
+            }
+        
         structured_data = {
             "properties": final_properties,
             "analysis": llm_analysis,
@@ -989,13 +1018,13 @@ def generate_character():
             "ethnicity": detected_ethnicity,
             "property_count": len(final_properties),
             "features_detected": list(nlp_features.keys()),
-            
-            # Hair data
-            "has_hair": hair_params is not None,
-            "hair_features": hair_features if hair_params else None,
-            "hair_params": hair_params,
-            "hair_generation": hair_generation_result
         }
+        
+        # Merge hair data if available
+        if hair_data_for_blender:
+            structured_data.update(hair_data_for_blender)
+        else:
+            structured_data['has_hair'] = False
         
         # Create request for Blender
         request_data = {
