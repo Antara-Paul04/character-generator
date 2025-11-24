@@ -1,11 +1,12 @@
 import bpy
-from mathutils import Vector  # FIXED: was mathlib
+from mathutils import Vector
 import re
 import json
 import os
 from datetime import datetime
 import time
 from typing import Dict, List, Tuple, Optional
+import traceback
 
 # =============================================================================
 # BLENDER BRIDGE CONFIGURATION
@@ -13,50 +14,95 @@ from typing import Dict, List, Tuple, Optional
 COMMUNICATION_DIR = r"C:\temp\blender_bridge"
 REQUEST_FILE = os.path.join(COMMUNICATION_DIR, "character_request.json")
 RESPONSE_FILE = os.path.join(COMMUNICATION_DIR, "character_response.json")
+STATUS_FILE = os.path.join(COMMUNICATION_DIR, "blender_status.json")
+LOG_FILE = os.path.join(COMMUNICATION_DIR, "blender_log.txt")
 
 is_monitoring = False
+
+# =============================================================================
+# LOGGING SYSTEM
+# =============================================================================
+def log(message, level="INFO"):
+    """Write to both console and log file"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_message = f"[{timestamp}] [{level}] {message}"
+    print(log_message)
+    
+    try:
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(log_message + "\n")
+    except:
+        pass
+
+def update_status(status="active"):
+    """Update status file so frontend knows bridge is running"""
+    try:
+        status_data = {
+            "timestamp": datetime.now().isoformat(),
+            "status": status,
+            "monitoring": is_monitoring
+        }
+        with open(STATUS_FILE, 'w') as f:
+            json.dump(status_data, f)
+    except Exception as e:
+        log(f"Failed to update status: {e}", "ERROR")
 
 # =============================================================================
 # BLENDER HELPER FUNCTIONS
 # =============================================================================
 def get_object_by_gender(gender="male"):
     """Get the appropriate character object based on detected gender."""
+    log(f"Searching for {gender} character object...")
+    
+    # Try exact name first
     base_name = "mb_female" if gender == "female" else "mb_male"
     
     if base_name in bpy.data.objects:
+        log(f"Found exact match: {base_name}")
         return bpy.data.objects[base_name]
     
+    # Try with prefix
     for obj in bpy.data.objects:
         if obj.name.startswith(base_name):
-            print(f"✓ Found character object: {obj.name}")
+            log(f"Found with prefix: {obj.name}")
             return obj
     
+    # Try fallback gender
     fallback_name = "mb_male" if gender == "female" else "mb_female"
-    print(f"⚠️  {base_name} not found, trying fallback: {fallback_name}")
+    log(f"Trying fallback: {fallback_name}")
     
     if fallback_name in bpy.data.objects:
+        log(f"Found fallback: {fallback_name}", "WARNING")
         return bpy.data.objects[fallback_name]
     
     for obj in bpy.data.objects:
         if obj.name.startswith(fallback_name):
-            print(f"⚠️  Using fallback object: {obj.name}")
+            log(f"Found fallback with prefix: {obj.name}", "WARNING")
             return obj
     
-    print(f"✗ Could not find any character object (tried {base_name} and {fallback_name})")
+    # Last resort: find any mesh object that looks like a character
+    log("Searching for any character-like mesh...", "WARNING")
+    for obj in bpy.data.objects:
+        if obj.type == 'MESH' and obj.data.shape_keys and len(obj.data.vertices) > 1000:
+            log(f"Using generic mesh as character: {obj.name}", "WARNING")
+            return obj
+    
+    log("No character object found!", "ERROR")
     return None
 
 def reset_character_shape_keys(obj):
     """Resets all shape key values to 0.0 for a clean start."""
     if not obj or not getattr(obj.data, "shape_keys", None):
+        log("No shape keys to reset")
         return
     
-    print("--- Resetting all shape keys ---")
+    log("Resetting all shape keys...")
     reset_count = 0
     for kb in obj.data.shape_keys.key_blocks:
         if kb.name != "Basis":
             kb.value = 0.0
             reset_count += 1
-    print(f"✓ Reset {reset_count} shape keys")
+    log(f"Reset {reset_count} shape keys")
 
 def apply_morph(obj, shape_key_name, value):
     """Applies a single morph value, checking if the key exists."""
@@ -66,53 +112,137 @@ def apply_morph(obj, shape_key_name, value):
     if shape_key_name in obj.data.shape_keys.key_blocks:
         obj.data.shape_keys.key_blocks[shape_key_name].value = min(1.0, max(0.0, value))
         return True
-    else:
-        return False
+    return False
 
 # =============================================================================
 # BODY PROPERTY PROCESSING (STEP 1)
 # =============================================================================
 def process_enhanced_properties(structured_data: Dict, character_obj, gender: str):
-    """
-    STEP 1: Applies body morphs from enhanced property mapping
-    """
-    print(f"\n{'='*60}")
-    print(f"STEP 1: APPLYING BODY PROPERTIES")
-    print(f"{'='*60}")
-    print(f"Processing {gender.upper()} character...")
+    """STEP 1: Applies body morphs from enhanced property mapping"""
+    log(f"\n{'='*60}")
+    log(f"STEP 1: APPLYING BODY PROPERTIES")
+    log(f"{'='*60}")
+    log(f"Processing {gender.upper()} character: {character_obj.name}")
     
     reset_character_shape_keys(character_obj)
     
     properties = structured_data.get("properties", {})
-    analysis = structured_data.get("analysis", {})
     
-    print(f"Total properties to apply: {len(properties)}")
+    if not properties:
+        log("WARNING: No properties to apply!", "WARNING")
+        return 0, 0
+    
+    log(f"Total properties to apply: {len(properties)}")
     
     applied_count = 0
     failed_count = 0
+    failed_properties = []
     
     for property_name, intensity in properties.items():
         if apply_morph(character_obj, property_name, intensity):
             applied_count += 1
+            if applied_count <= 5:  # Log first 5 for verification
+                log(f"  ✓ Applied: {property_name} = {intensity:.2f}")
         else:
             failed_count += 1
+            failed_properties.append(property_name)
     
-    # CRITICAL: Update the view layer to apply changes
+    # Force viewport update
     bpy.context.view_layer.update()
     
-    print(f"✓ Body properties applied: {applied_count}")
-    print(f"✗ Body properties failed: {failed_count}")
+    log(f"✓ Body properties applied: {applied_count}")
+    log(f"✗ Body properties failed: {failed_count}")
     
-    if analysis:
-        print(f"\n📊 Analysis: {analysis.get('analysis', 'N/A')}")
+    if failed_count > 0 and failed_count <= 10:
+        log(f"Failed properties: {', '.join(failed_properties[:10])}", "WARNING")
     
     return applied_count, failed_count
 
 # =============================================================================
-# HAIR GENERATION (STEP 2)
+# HAIR GENERATION (STEP 2) - SIMPLIFIED VERSION
 # =============================================================================
-def create_head_vertex_group(character_obj):
-    """Create a vertex group for SCALP ONLY"""
+def create_simple_hair_system(character_obj, hair_params):
+    """Create particle hair system - SIMPLIFIED AND ROBUST"""
+    try:
+        log(f"\n{'='*60}")
+        log(f"STEP 2: CREATING HAIR SYSTEM")
+        log(f"{'='*60}")
+        
+        # Make character active
+        bpy.context.view_layer.objects.active = character_obj
+        character_obj.select_set(True)
+        log(f"Set active object: {character_obj.name}")
+        
+        # Remove any existing hair systems
+        while len(character_obj.particle_systems) > 0:
+            bpy.ops.object.particle_system_remove()
+        log("Cleared existing particle systems")
+        
+        # Add particle system
+        log("Adding particle system...")
+        bpy.ops.object.particle_system_add()
+        
+        psys = character_obj.particle_systems[-1]
+        psys.name = "Hair_System"
+        
+        settings = psys.settings
+        settings.type = 'HAIR'
+        log("✓ Set type to HAIR")
+        
+        # Extract parameters
+        particle_count = hair_params.get('particle_count', 5000)
+        particle_length = hair_params.get('particle_length', 0.5)
+        curl_intensity = hair_params.get('curl_intensity', 0.0)
+        randomness = hair_params.get('randomness', 0.3)
+        
+        # Configure hair parameters
+        settings.count = int(particle_count)
+        settings.hair_length = float(particle_length)
+        settings.hair_step = 5
+        settings.render_step = 5
+        
+        log(f"✓ Configured: {settings.count} particles, length {settings.hair_length}")
+        
+        # Add children for volume
+        settings.child_nbr = max(100, int(settings.count * 0.1))
+        settings.child_length = 1.0
+        settings.child_radius = float(randomness)
+        
+        log(f"✓ Added child particles: {settings.child_nbr}")
+        
+        # Set curl if needed
+        if curl_intensity > 0:
+            settings.child_type = 'INTERPOLATED'
+            settings.clump_factor = 0.2 + curl_intensity * 0.3
+            settings.roughness_1 = curl_intensity
+            log(f"✓ Set curl intensity: {curl_intensity}")
+        
+        # Try to limit to head region (optional, won't fail if doesn't work)
+        try:
+            vertex_group = create_head_vertex_group_safe(character_obj)
+            if vertex_group:
+                psys.vertex_group_density = vertex_group
+                log(f"✓ Limited hair to vertex group: {vertex_group}")
+        except Exception as e:
+            log(f"⚠ Could not limit hair to head (will cover whole body): {e}", "WARNING")
+        
+        # Force update
+        bpy.context.view_layer.update()
+        
+        log(f"\n✅ HAIR SYSTEM CREATED SUCCESSFULLY!")
+        log(f"   System name: {psys.name}")
+        log(f"   Particle count: {settings.count}")
+        log(f"   Hair length: {settings.hair_length}")
+        
+        return True
+        
+    except Exception as e:
+        log(f"✗ Hair creation failed: {e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        return False
+
+def create_head_vertex_group_safe(character_obj):
+    """Create vertex group for head region - safe version that won't crash"""
     try:
         mesh = character_obj.data
         
@@ -121,166 +251,28 @@ def create_head_vertex_group(character_obj):
             character_obj.vertex_groups.remove(character_obj.vertex_groups["Hair_Region"])
         
         hair_group = character_obj.vertex_groups.new(name="Hair_Region")
+        
+        # Simple approach: select top 15% of vertices by Z coordinate
         vertices = mesh.vertices
         world_matrix = character_obj.matrix_world
         
-        # Calculate head region
-        z_coords = [world_matrix @ v.co for v in vertices]
-        max_z = max(z.z for z in z_coords)
-        min_z = min(z.z for z in z_coords)
-        height_range = max_z - min_z
+        # Get all Z coordinates
+        z_coords = [(i, (world_matrix @ v.co).z) for i, v in enumerate(vertices)]
+        z_coords.sort(key=lambda x: x[1], reverse=True)
         
-        # Top 20% of character = head/scalp area
-        head_threshold = max_z - (height_range * 0.20)
+        # Take top 15%
+        num_head_verts = max(100, int(len(vertices) * 0.15))
+        head_vertex_indices = [idx for idx, z in z_coords[:num_head_verts]]
         
-        print(f"  Character height: {height_range:.3f}m")
-        print(f"  Head threshold Z: {head_threshold:.3f}m")
-        
-        head_vertex_indices = []
-        
-        for i, vertex in enumerate(vertices):
-            world_pos = world_matrix @ vertex.co
-            
-            # Check if vertex is in head region
-            if world_pos.z > head_threshold:
-                # Only include vertices near center (scalp, not ears/face)
-                x_dist = abs(world_pos.x)
-                y_dist = abs(world_pos.y)
-                
-                # Tight bounds for scalp only
-                if x_dist < 0.12 and y_dist < 0.12:
-                    head_vertex_indices.append(i)
-        
-        if len(head_vertex_indices) < 100:
-            print("⚠️  Too few vertices, relaxing constraints...")
-            head_vertex_indices = []
-            for i, vertex in enumerate(vertices):
-                world_pos = world_matrix @ vertex.co
-                if world_pos.z > head_threshold:
-                    head_vertex_indices.append(i)
-        
+        # Add to group
         hair_group.add(head_vertex_indices, 1.0, 'ADD')
         
-        print(f"✓ Created Hair_Region with {len(head_vertex_indices)} vertices")
+        log(f"✓ Created Hair_Region with {len(head_vertex_indices)} vertices")
         return "Hair_Region"
         
     except Exception as e:
-        print(f"✗ Error creating vertex group: {e}")
-        import traceback
-        traceback.print_exc()
+        log(f"⚠ Vertex group creation failed: {e}", "WARNING")
         return None
-
-def create_particle_hair_system(character_obj, hair_params):
-    """Create particle hair system on HEAD ONLY"""
-    try:
-        print(f"\n{'='*60}")
-        print(f"STEP 2: CREATING HAIR SYSTEM")
-        print(f"{'='*60}")
-        
-        bpy.context.view_layer.objects.active = character_obj
-        character_obj.select_set(True)
-        
-        # Step 1: Create vertex group for head
-        print("Creating head vertex group...")
-        vertex_group_name = create_head_vertex_group(character_obj)
-        
-        if not vertex_group_name:
-            print("⚠️  Vertex group creation failed, hair will cover whole body")
-        
-        # Step 2: Add particle system
-        print("Adding particle system...")
-        bpy.ops.object.particle_system_add()
-        
-        psys = character_obj.particle_systems[-1]
-        psys.name = "Hair_System"
-        
-        settings = psys.settings
-        settings.type = 'HAIR'
-        
-        # Step 3: CRITICAL - Assign vertex group to limit hair to head
-        if vertex_group_name:
-            psys.vertex_group_density = vertex_group_name
-            print(f"✓ Hair limited to: {vertex_group_name}")
-        
-        # Step 4: Configure hair parameters
-        settings.count = hair_params.get('particle_count', 5000)
-        settings.hair_length = hair_params.get('particle_length', 0.5)
-        settings.hair_step = 5
-        settings.render_step = 5
-        
-        # Children for volume
-        settings.child_nbr = int(settings.count * 0.1)
-        settings.child_length = 1.0
-        settings.child_radius = hair_params.get('randomness', 0.3)
-        
-        # Curl settings
-        curl_intensity = hair_params.get('curl_intensity', 0.0)
-        if curl_intensity > 0:
-            settings.child_type = 'INTERPOLATED'
-            settings.clump_factor = 0.2 + curl_intensity * 0.3
-            settings.roughness_1 = curl_intensity
-        
-        print(f"✓ Hair created with {settings.count} particles")
-        print(f"  Length: {settings.hair_length}")
-        print(f"  Curl: {curl_intensity}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"✗ Hair creation failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def apply_hair_to_character(character_obj, structured_data):
-    """Apply hair to character - called after body properties"""
-    result = {
-        'success': False,
-        'method': None,
-        'message': ''
-    }
-    
-    # Extract hair parameters from structured_data
-    hair_params = structured_data.get('hair_params', {})
-    hair_generation = structured_data.get('hair_generation', {})
-    
-    print(f"\n💇 Hair application starting...")
-    print(f"  Has hair_params: {bool(hair_params)}")
-    print(f"  Hair generation: {hair_generation.get('success', False)}")
-    
-    if not hair_params:
-        result['message'] = 'No hair parameters provided'
-        return result
-    
-    # Method 1: Try HairNet OBJ import (if available)
-    if hair_generation.get('success') and not hair_generation.get('mock'):
-        obj_path = hair_generation.get('output_path')
-        if obj_path and os.path.exists(obj_path):
-            print(f"Attempting to import HairNet OBJ: {obj_path}")
-            # Import OBJ code here if needed
-            pass
-    
-    # Method 2: Use particle system (primary method)
-    print("Using particle system for hair generation...")
-    
-    # Extract particle parameters
-    particle_params = {
-        'particle_count': hair_params.get('particle_count', 5000),
-        'particle_length': hair_params.get('particle_length', 0.5),
-        'curl_intensity': hair_params.get('curl_intensity', 0.0),
-        'randomness': hair_params.get('randomness', 0.3)
-    }
-    
-    print(f"Particle params: {particle_params}")
-    
-    if create_particle_hair_system(character_obj, particle_params):
-        result['success'] = True
-        result['method'] = 'particle_system'
-        result['message'] = f"Hair created with {particle_params['particle_count']} particles"
-        return result
-    
-    result['message'] = 'Hair creation failed'
-    return result
 
 # =============================================================================
 # BRIDGE MONITORING
@@ -290,16 +282,20 @@ def start_bridge_monitoring():
     global is_monitoring
    
     if is_monitoring:
-        print("Bridge monitoring is already active.")
+        log("Bridge monitoring is already active.")
         return
    
     os.makedirs(COMMUNICATION_DIR, exist_ok=True)
    
-    print(f"🎭 Starting Enhanced Blender Bridge...")
-    print(f"📁 Watching: {COMMUNICATION_DIR}")
-    print("⏳ Ready for requests...")
+    log(f"{'='*70}")
+    log(f"🎭 BLENDER BRIDGE STARTED")
+    log(f"{'='*70}")
+    log(f"📁 Watching: {COMMUNICATION_DIR}")
+    log(f"📝 Log file: {LOG_FILE}")
+    log("⏳ Ready for requests...")
    
     is_monitoring = True
+    update_status("active")
     bpy.app.timers.register(check_for_requests, first_interval=0.5)
 
 def stop_bridge_monitoring():
@@ -310,7 +306,8 @@ def stop_bridge_monitoring():
     if bpy.app.timers.is_registered(check_for_requests):
         bpy.app.timers.unregister(check_for_requests)
    
-    print("Bridge monitoring stopped.")
+    update_status("stopped")
+    log("Bridge monitoring stopped.")
 
 def check_for_requests():
     """Timer function that checks for new character requests"""
@@ -319,115 +316,135 @@ def check_for_requests():
     if not is_monitoring:
         return None
     
+    # Update status heartbeat
+    update_status("active")
+    
     try:
-        if os.path.exists(REQUEST_FILE):
-            with open(REQUEST_FILE, 'r') as f:
-                request_data = json.load(f)
-           
-            structured_data = request_data.get('structured_data', {})
-            prompt = request_data['prompt']
-           
-            if not structured_data:
-                print("✗ Error: Missing structured_data")
-                response_data = {
-                    "timestamp": datetime.now().isoformat(),
-                    "prompt": prompt,
-                    "status": "error",
-                    "message": "No structured data provided"
-                }
-                with open(RESPONSE_FILE, 'w') as f:
-                    json.dump(response_data, f)
-                os.remove(REQUEST_FILE)
-                return 0.5
-
-            gender = structured_data.get('gender', 'male')
-            ethnicity = structured_data.get('ethnicity', 'caucasian')
-            has_hair = structured_data.get('has_hair', False)
-            
-            print(f"\n{'='*70}")
-            print(f"🎭 NEW CHARACTER REQUEST")
-            print(f"{'='*70}")
-            print(f"Prompt: {prompt}")
-            print(f"Gender: {gender.upper()}")
-            print(f"Ethnicity: {ethnicity.upper()}")
-            print(f"Properties: {len(structured_data.get('properties', {}))}")
-            print(f"Has Hair: {'YES' if has_hair else 'NO'}")
-            print(f"{'='*70}")
-           
-            character = get_object_by_gender(gender)
-           
-            if not character:
-                response_data = {
-                    "timestamp": datetime.now().isoformat(),
-                    "prompt": prompt,
-                    "gender": gender,
-                    "status": "error",
-                    "message": f"Character object '{gender}' not found in scene"
-                }
-                with open(RESPONSE_FILE, 'w') as f:
-                    json.dump(response_data, f)
-                os.remove(REQUEST_FILE)
-                return 0.5
-            
-            # STEP 1: Apply body properties FIRST
-            print(f"\nWorking on character: {character.name}")
-            applied, failed = process_enhanced_properties(structured_data, character, gender)
-            
-            # STEP 2: Apply hair AFTER body is complete
-            hair_result = None
-            if has_hair:
-                time.sleep(0.5)  # Brief pause to ensure body properties are fully applied
-                hair_result = apply_hair_to_character(character, structured_data)
-                
-                if hair_result['success']:
-                    print(f"\n✅ Hair applied: {hair_result['method']}")
-                else:
-                    print(f"\n⚠️  Hair failed: {hair_result['message']}")
-            else:
-                print("\nℹ️  No hair requested")
-            
-            # Send response
-            response_data = {
-                "timestamp": datetime.now().isoformat(),
-                "prompt": prompt,
-                "gender": gender,
-                "ethnicity": ethnicity,
-                "status": "completed",
-                "message": f"✓ {gender.capitalize()} character generated!",
-                "properties_applied": applied,
-                "properties_failed": failed,
-                "character_object": character.name,
-                "has_hair": has_hair,
-                "hair_method": hair_result['method'] if hair_result and hair_result['success'] else 'none',
-                "hair_status": hair_result['message'] if hair_result else 'No hair requested'
-            }
-            
-            with open(RESPONSE_FILE, 'w') as f:
-                json.dump(response_data, f)
-           
-            os.remove(REQUEST_FILE)
-            
-            print(f"\n{'='*70}")
-            print(f"✅ CHARACTER GENERATION COMPLETE!")
-            print(f"{'='*70}\n")
-           
-    except Exception as e:
-        print(f"✗ Error processing request: {e}")
-        import traceback
-        traceback.print_exc()
+        if not os.path.exists(REQUEST_FILE):
+            return 0.5
         
+        log(f"\n{'='*70}")
+        log(f"📥 NEW REQUEST DETECTED")
+        log(f"{'='*70}")
+        
+        # Read request
+        with open(REQUEST_FILE, 'r') as f:
+            request_data = json.load(f)
+       
+        structured_data = request_data.get('structured_data', {})
+        prompt = request_data.get('prompt', 'No prompt provided')
+       
+        if not structured_data:
+            error_msg = "No structured data provided"
+            log(f"✗ ERROR: {error_msg}", "ERROR")
+            send_error_response(prompt, error_msg)
+            return 0.5
+
+        gender = structured_data.get('gender', 'male')
+        ethnicity = structured_data.get('ethnicity', 'caucasian')
+        has_hair = structured_data.get('has_hair', False)
+        
+        log(f"Prompt: {prompt}")
+        log(f"Gender: {gender.upper()}")
+        log(f"Ethnicity: {ethnicity.upper()}")
+        log(f"Properties: {len(structured_data.get('properties', {}))}")
+        log(f"Has Hair: {'YES' if has_hair else 'NO'}")
+       
+        # Get character object
+        character = get_object_by_gender(gender)
+       
+        if not character:
+            error_msg = f"Character object '{gender}' not found in scene"
+            log(f"✗ ERROR: {error_msg}", "ERROR")
+            send_error_response(prompt, error_msg, gender=gender)
+            return 0.5
+        
+        # STEP 1: Apply body properties
+        log(f"\nWorking on character: {character.name}")
+        applied, failed = process_enhanced_properties(structured_data, character, gender)
+        
+        if applied == 0:
+            log("⚠ WARNING: No properties were applied!", "WARNING")
+        
+        # STEP 2: Apply hair if requested
+        hair_success = False
+        hair_method = 'none'
+        
+        if has_hair:
+            log("\nProcessing hair generation...")
+            time.sleep(0.3)  # Brief pause to ensure body updates complete
+            
+            # Get hair parameters
+            hair_params = structured_data.get('hair_params', {})
+            if not hair_params:
+                log("Using default hair parameters", "WARNING")
+                hair_params = {
+                    'particle_count': 5000,
+                    'particle_length': 0.5,
+                    'curl_intensity': 0.0,
+                    'randomness': 0.3
+                }
+            
+            hair_success = create_simple_hair_system(character, hair_params)
+            hair_method = 'particle_system' if hair_success else 'failed'
+            
+            if hair_success:
+                log(f"\n✅ Hair applied successfully!")
+            else:
+                log(f"\n⚠️  Hair generation failed", "WARNING")
+        else:
+            log("\nℹ️  No hair requested")
+        
+        # Send success response
+        response_data = {
+            "timestamp": datetime.now().isoformat(),
+            "prompt": prompt,
+            "gender": gender,
+            "ethnicity": ethnicity,
+            "status": "completed",
+            "message": f"✓ {gender.capitalize()} character generated!",
+            "properties_applied": applied,
+            "properties_failed": failed,
+            "character_object": character.name,
+            "has_hair": has_hair,
+            "hair_method": hair_method,
+            "hair_status": "Applied successfully" if hair_success else ("Failed" if has_hair else "Not requested")
+        }
+        
+        with open(RESPONSE_FILE, 'w') as f:
+            json.dump(response_data, f, indent=2)
+       
+        os.remove(REQUEST_FILE)
+        
+        log(f"\n{'='*70}")
+        log(f"✅ CHARACTER GENERATION COMPLETE!")
+        log(f"{'='*70}\n")
+       
+    except Exception as e:
+        error_msg = f"Error processing request: {str(e)}"
+        log(f"✗ {error_msg}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
+        send_error_response("Unknown", error_msg)
+   
+    return 0.5
+
+def send_error_response(prompt, error_message, **kwargs):
+    """Send error response to frontend"""
+    try:
         error_response = {
             "timestamp": datetime.now().isoformat(),
+            "prompt": prompt,
             "status": "error",
-            "message": f"Error: {str(e)}"
+            "message": error_message,
+            **kwargs
         }
         with open(RESPONSE_FILE, 'w') as f:
-            json.dump(error_response, f)
+            json.dump(error_response, f, indent=2)
        
         if os.path.exists(REQUEST_FILE):
             os.remove(REQUEST_FILE)
-   
-    return 0.5
+    except Exception as e:
+        log(f"Failed to send error response: {e}", "ERROR")
 
 # =============================================================================
 # BLENDER UI PANEL
@@ -450,6 +467,15 @@ class MESH_PT_character_bridge(bpy.types.Panel):
         row = layout.row()
         row.scale_y = 1.5
         row.operator("mesh.stop_bridge")
+        
+        # Show status
+        if os.path.exists(STATUS_FILE):
+            try:
+                with open(STATUS_FILE, 'r') as f:
+                    status = json.load(f)
+                layout.label(text=f"Status: {status.get('status', 'unknown')}", icon='INFO')
+            except:
+                pass
 
 class MESH_OT_start_bridge(bpy.types.Operator):
     bl_idname = "mesh.start_bridge"
@@ -479,10 +505,11 @@ def unregister():
     bpy.utils.unregister_class(MESH_OT_start_bridge)
     bpy.utils.unregister_class(MESH_OT_stop_bridge)
 
+# Initialize
 register()
 
-print("="*70)
-print("🎭 BLENDER CHARACTER GENERATOR BRIDGE")
-print("="*70)
-print("Ready! Click 'Start Bridge' to begin.")
-print("="*70)
+log("="*70)
+log("🎭 BLENDER CHARACTER GENERATOR BRIDGE")
+log("="*70)
+log("Ready! Click 'Start Bridge' in the Properties panel.")
+log("="*70)

@@ -1040,7 +1040,7 @@ def generate_character():
             json.dump(request_data, f, indent=2)
         
         # Wait for response
-        timeout = 45  # Increased timeout for hair processing
+        timeout = 60  # Increased timeout for hair processing
         start_time = time.time()
         
         print(f"⏳ Waiting for Blender response (timeout: {timeout}s)...")
@@ -1077,6 +1077,22 @@ def generate_character():
                 return jsonify(response)
             
             time.sleep(0.5)
+        elapsed = time.time() - start_time
+        if elapsed > timeout:
+            log_content = ""
+        log_path = os.path.join(COMMUNICATION_DIR, "blender_log.txt")
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, 'r') as f:
+                # Get last 20 lines
+                    lines = f.readlines()
+                    log_content = ''.join(lines[-20:])
+            except:
+                pass
+    
+        error_msg = f"Timeout after {timeout}s. Blender may have crashed or frozen."
+        if log_content:
+            error_msg += f"\n\nLast Blender log entries:\n{log_content}"
         
         print(f"\n❌ TIMEOUT: No response from Blender after {timeout}s")
         
