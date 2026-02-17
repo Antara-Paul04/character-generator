@@ -1,3 +1,4 @@
 *.blend
 env/
 newenv/
+__pycache__/

@@ -941,24 +941,43 @@ def generate_character():
                 print(f"  Added properties: {list(llm_added)}")
         else:
             print("✓ LLM analysis completed (no additional properties)")
-        
+    
+
+        # STEP 3.5: Analyze hair (new)
+        print("\n💇 Step 3.5: Analyzing hair from prompt...")
+        try:
+            from hair_generator import hair_analyzer
+            hair_analysis = hair_analyzer.analyze_hair_prompt(user_prompt)
+            print(f"✓ Hair analysis complete:")
+            print(f"  - Has hair: {hair_analysis.get('has_hair', True)}")
+            print(f"  - Style: {hair_analysis.get('style', 'unknown')}")
+            print(f"  - Length: {hair_analysis.get('length', 'unknown')}")
+            print(f"  - Color: {hair_analysis.get('color', 'unknown')}")
+        except ImportError as e:
+            print(f"⚠️ Hair analyzer not available: {e}")
+            hair_analysis = {'has_hair': True, 'style': None}
+        except Exception as e:
+            print(f"⚠️ Hair analysis failed: {e}")
+            hair_analysis = {'has_hair': True, 'style': None}
         # Final count
         print(f"\n✅ FINAL MAPPING: {len(final_properties)} properties")
         print(f"   Gender: {detected_gender.upper()}")
         print(f"   Ethnicity: {detected_ethnicity.upper()}")
         
         # STEP 4: Prepare data for Blender
+                # STEP 4: Prepare data for Blender
         structured_data = {
             "properties": final_properties,
             "analysis": llm_analysis,
-            "prompt": user_prompt,
+            "prompt": user_prompt,  # Include original prompt for hair generation
             "timestamp": datetime.now().isoformat(),
             "property_map": final_properties,
             "llm_used": llm_analysis.get("llm_used", False),
             "gender": detected_gender,
             "ethnicity": detected_ethnicity,
             "property_count": len(final_properties),
-            "features_detected": list(nlp_features.keys())
+            "features_detected": list(nlp_features.keys()),
+            "hair_analysis": hair_analysis  # Add hair analysis
         }
         
         # Create request for Blender
@@ -1002,7 +1021,8 @@ def generate_character():
                     "llm_used": llm_analysis.get("llm_used", False),
                     "gender": detected_gender,
                     "ethnicity": detected_ethnicity,
-                    "character_object": response_data.get("character_object", "unknown")
+                    "character_object": response_data.get("character_object", "unknown"),
+                    "hair_analysis": hair_analysis  # Add hair info to response
                 })
             
             time.sleep(0.5)
@@ -1058,6 +1078,29 @@ def config():
         "communication_dir": COMMUNICATION_DIR,
         "properties_count": len(CHARACTER_PROPERTIES)
     })
+    
+@app.route('/reset-blender-connection', methods=['POST'])
+def reset_blender_connection():
+    """Force reset the Blender connection status"""
+    global blender_started_once, last_successful_generation
+    
+    try:
+        # Clean up stale files
+        if os.path.exists(REQUEST_FILE):
+            os.remove(REQUEST_FILE)
+        if os.path.exists(RESPONSE_FILE):
+            os.remove(RESPONSE_FILE)
+        
+        # Reset flags
+        blender_started_once = False
+        last_successful_generation = None
+        
+        return jsonify({
+            "success": True,
+            "message": "Blender connection reset. You can now start Blender again."
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     print("🎭 ENHANCED Character Generator Frontend Starting...")

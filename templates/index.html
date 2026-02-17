@@ -49,6 +49,22 @@
             font-weight: 600;
             color: #555;
         }
+                .reset-btn {
+            flex: 0.5;
+            padding: 15px;
+            background: #ffc107;
+            color: #333;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .reset-btn:hover {
+            transform: translateY(-2px);
+            background: #e0a800;
+        }
         #prompt {
             width: 100%;
             height: 120px;
@@ -263,9 +279,12 @@
             <textarea id="prompt" placeholder="Example: Create a young Indian woman with expressive brown eyes, long wavy hair, and a warm smile. She has a slender athletic build from yoga practice, high cheekbones, and olive skin. She works as a teacher and has an energetic, friendly demeanor."></textarea>
         </div>
         
-        <div class="button-group">
+                <div class="button-group">
             <button class="start-blender-btn" onclick="startBlender()">
                 🚀 Start Blender
+            </button>
+            <button class="reset-btn" onclick="resetBlenderConnection()" style="background: #ffc107; color: #333; flex: 0.5;">
+                🔄 Reset
             </button>
             <button class="generate-btn" onclick="generateCharacter()">
                 🎨 Generate Character
@@ -286,6 +305,34 @@
     </div>
 
     <script>
+                async function resetBlenderConnection() {
+            try {
+                const response = await fetch('/reset-blender-connection', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showStatus('✅ Blender connection reset. Click Start Blender again.', 'success');
+                    
+                    // Reset UI
+                    const blenderBtn = document.querySelector('.start-blender-btn');
+                    blenderBtn.innerHTML = '🚀 Start Blender';
+                    blenderBtn.disabled = false;
+                    
+                    document.querySelector('.generate-btn').disabled = true;
+                    
+                    // Update status
+                    updateSystemStatus();
+                } else {
+                    showStatus(`❌ ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ Reset failed: ${error.message}`, 'error');
+            }
+        }
         function setPrompt(text) {
             document.getElementById('prompt').value = text;
         }
@@ -297,7 +344,7 @@
             statusDiv.style.display = 'block';
         }
         
-        function showAnalysis(data) {
+                function showAnalysis(data) {
             const analysisDiv = document.getElementById('analysisResult');
             let html = '<h4>🧠 Character Analysis:</h4>';
             
@@ -316,6 +363,31 @@
                         <div class="info-value">${data.property_count || 0}</div>
                      </div>`;
             html += '</div>';
+            
+            // Add hair info (NEW)
+            if (data.hair_analysis) {
+                html += '<div style="margin-top: 15px; background: #e3f2fd; padding: 10px; border-radius: 6px;">';
+                html += '<h5 style="margin: 0 0 8px 0; color: #0d47a1;">💇 Hair Analysis:</h5>';
+                html += '<div style="display: flex; flex-wrap: wrap; gap: 15px;">';
+                
+                if (data.hair_analysis.has_hair === false) {
+                    html += '<span class="feature-badge">Bald/No Hair</span>';
+                } else {
+                    if (data.hair_analysis.style) {
+                        html += `<span class="feature-badge" style="background: #e1f5fe; color: #01579b;">Style: ${data.hair_analysis.style}</span>`;
+                    }
+                    if (data.hair_analysis.length) {
+                        html += `<span class="feature-badge" style="background: #e1f5fe; color: #01579b;">Length: ${data.hair_analysis.length}</span>`;
+                    }
+                    if (data.hair_analysis.color) {
+                        html += `<span class="feature-badge" style="background: #e1f5fe; color: #01579b;">Color: ${data.hair_analysis.color}</span>`;
+                    }
+                    if (data.hair_analysis.volume) {
+                        html += `<span class="feature-badge" style="background: #e1f5fe; color: #01579b;">Volume: ${data.hair_analysis.volume}</span>`;
+                    }
+                }
+                html += '</div></div>';
+            }
             
             if (data.character_object) {
                 html += `<p style="margin-top: 10px;"><strong>Blender Object:</strong> ${data.character_object}</p>`;
