@@ -19,14 +19,21 @@ class HairPropertyAnalyzer:
             'braided': ['braided', 'braids', 'cornrows', 'dutch braid', 'french braid'],
             'twisted': ['twisted', 'dreads', 'locs', 'twists', 'twist out'],
             'bob': ['bob cut', 'bob hairstyle', 'chin-length', 'shoulder-length bob'],
-            'pixie': ['pixie cut', 'short crop', 'short hair', 'cropped'],  # Added 'short hair'
+            'pixie': ['pixie cut', 'short crop', 'short hair', 'cropped'],
             'bun': ['bun', 'top knot', 'man bun', 'hair bun'],
             'ponytail': ['ponytail', 'high ponytail', 'low ponytail', 'side ponytail'],
             'mohawk': ['mohawk', 'faux hawk', 'fohawk'],
             'bald': ['bald', 'shaved head', 'no hair', 'bald head'],
             'long': ['long hair', 'flowing hair', 'waist-length', 'very long'],
-            'short': ['short hair', 'cropped', 'close cut', 'buzz cut', 'military cut'],  # Enhanced
-            'beard': ['beard', 'facial hair', 'goatee', 'mustache', 'stubble'],  # Added for men
+            'short': ['short hair', 'cropped', 'close cut', 'buzz cut', 'military cut'],
+            'beard': ['beard', 'facial hair', 'goatee', 'mustache', 'stubble'],
+            'afro': ['afro', 'fro', 'natural afro', 'big hair'],
+            'cornrows': ['cornrows', 'rows', 'canerows'],
+            'dreadlocks': ['dreadlocks', 'dreads', 'locs', 'sisterlocks'],
+            'mullet': ['mullet', 'business in front party in back'],
+            'undercut': ['undercut', 'shaved sides', 'fade'],
+            'quiff': ['quiff', 'pompadour'],
+            'spiky': ['spiky', 'spikes', 'spiked hair'],
         }
         
         # Hair length mapping (0-1 scale for GBH parameters)
@@ -60,12 +67,12 @@ class HairPropertyAnalyzer:
             'rainbow': ['rainbow hair', 'multicolor', 'colorful hair'],
         }
         
-        # Special features
-        special_features_keywords = {
-            'baldness': ['balding', 'receding hairline', 'thinning', 'bald spot'],
-            'facial_hair': ['beard', 'mustache', 'goatee', 'stubble', 'facial hair'],
-            'sideburns': ['sideburns', 'mutton chops'],
-            'eyebrows': ['thick eyebrows', 'thin eyebrows', 'arched eyebrows'],
+        # GBH conversion types
+        self.gbh_conversion_types = {
+            'strands': 'CURVES',      # For realistic hair strands
+            'mesh': 'MESH',            # For stylized mesh hair
+            'cards': 'MESH',           # For game-ready hair cards
+            'particles': 'PARTICLES',  # For particle system
         }
         
         # Intensity modifiers
@@ -76,16 +83,6 @@ class HairPropertyAnalyzer:
         }
         
         self.default_intensity = 0.65
-        
-        # GBH Tool specific parameters
-        self.gbh_parameters = {
-            'style': 'hair_style',  # Will map to GBH preset
-            'length': 'hair_length',
-            'volume': 'hair_density',
-            'curliness': 'hair_curl',
-            'parting': 'hair_part',
-            'bangs': 'hair_bangs',
-        }
     
     def analyze_hair_prompt(self, prompt: str) -> Dict[str, Any]:
         """
@@ -99,6 +96,7 @@ class HairPropertyAnalyzer:
             'length': None,
             'volume': None,
             'color': None,
+            'conversion_type': 'CURVES',  # Default to strands
             'special_features': [],
             'parameters': {},
             'confidence': 0.0
@@ -130,6 +128,14 @@ class HairPropertyAnalyzer:
         detected_color = self._detect_feature(prompt_lower, self.color_keywords)
         if detected_color:
             hair_analysis['color'] = detected_color
+        
+        # Determine conversion type based on style and keywords
+        if any(x in prompt_lower for x in ['mesh hair', 'stylized', 'cartoon', 'anime']):
+            hair_analysis['conversion_type'] = 'MESH'
+        elif any(x in prompt_lower for x in ['hair cards', 'game', 'low poly']):
+            hair_analysis['conversion_type'] = 'MESH'  # Cards are also mesh
+        elif any(x in prompt_lower for x in ['particles', 'particle system']):
+            hair_analysis['conversion_type'] = 'PARTICLES'
         
         # Map to GBH parameters
         hair_analysis['parameters'] = self._map_to_gbh_parameters(hair_analysis, prompt_lower)
@@ -171,23 +177,29 @@ class HairPropertyAnalyzer:
     def _map_to_gbh_parameters(self, analysis: Dict, prompt_lower: str) -> Dict[str, float]:
         """
         Map detected hair features to GBH Tool parameters
-        These will need to be adjusted based on the actual GBH Tool API
         """
         params = {}
         
-        # Style mapping (will need exact GBH operator parameter names)
-        style_to_param = {
-            'straight': {'curl': 0.0, 'noise': 0.2},
-            'wavy': {'curl': 0.4, 'noise': 0.3},
-            'curly': {'curl': 0.8, 'noise': 0.4},
-            'kinky': {'curl': 1.0, 'noise': 0.5},
-            'braided': {'braid_intensity': 0.8, 'twist': 1.0},
-            'twisted': {'twist': 0.8, 'curl': 0.3},
-            'bob': {'length': 0.3, 'style_type': 0.5},
-            'pixie': {'length': 0.1, 'volume': 0.3},
-            'bun': {'bun_size': 0.7, 'style_type': 2.0},
-            'ponytail': {'ponytail_height': 0.6, 'style_type': 1.0},
-            'mohawk': {'mohawk_width': 0.7, 'style_type': 3.0},
+        # Style-specific parameter mapping
+        style_params = {
+            'straight': {'curl': 0.0, 'noise': 0.2, 'density': 0.7},
+            'wavy': {'curl': 0.4, 'noise': 0.3, 'density': 0.7},
+            'curly': {'curl': 0.8, 'noise': 0.4, 'density': 0.8},
+            'kinky': {'curl': 1.0, 'noise': 0.5, 'density': 0.9},
+            'afro': {'curl': 1.0, 'noise': 0.6, 'density': 1.0, 'volume': 1.0},
+            'braided': {'braid_intensity': 0.8, 'twist': 1.0, 'density': 0.8},
+            'twisted': {'twist': 0.8, 'curl': 0.3, 'density': 0.7},
+            'dreadlocks': {'twist': 1.0, 'curl': 0.2, 'density': 0.6, 'thickness': 0.8},
+            'cornrows': {'braid_intensity': 1.0, 'pattern': 0.5, 'density': 0.7},
+            'bob': {'length': 0.3, 'volume': 0.5, 'style_type': 0.5},
+            'pixie': {'length': 0.1, 'volume': 0.3, 'style_type': 0.3},
+            'bun': {'bun_size': 0.7, 'style_type': 2.0, 'length': 0.2},
+            'ponytail': {'ponytail_height': 0.6, 'style_type': 1.0, 'length': 0.6},
+            'mohawk': {'mohawk_width': 0.7, 'style_type': 3.0, 'length': 0.4},
+            'mullet': {'length_front': 0.2, 'length_back': 0.8, 'style_type': 4.0},
+            'undercut': {'sides': 0.0, 'top': 0.7, 'style_type': 5.0},
+            'quiff': {'front_volume': 0.8, 'length': 0.5, 'style_type': 6.0},
+            'spiky': {'spike_height': 0.7, 'spike_density': 0.6, 'style_type': 7.0},
         }
         
         # Length mapping (0-1)
@@ -208,45 +220,48 @@ class HairPropertyAnalyzer:
         }
         
         # Apply style parameters
-        if analysis['style'] and analysis['style'] in style_to_param:
-            params.update(style_to_param[analysis['style']])
+        style = analysis.get('style')
+        if style and style in style_params:
+            params.update(style_params[style])
         
         # Apply length
         if analysis['length'] and analysis['length'] in length_to_value:
             params['length'] = length_to_value[analysis['length']]
-            
-            # Adjust length for specific styles
-            if analysis['style'] == 'bob':
-                params['length'] = min(0.4, params.get('length', 0.3))
-            elif analysis['style'] == 'pixie':
-                params['length'] = min(0.2, params.get('length', 0.1))
         
-        # Apply volume
+        # Apply volume/density
         if analysis['volume'] and analysis['volume'] in volume_to_value:
             params['density'] = volume_to_value[analysis['volume']]
+            params['volume'] = volume_to_value[analysis['volume']]
         
         # Check for parting
         if 'middle part' in prompt_lower or 'center part' in prompt_lower:
-            params['parting'] = 0.5  # middle part
+            params['parting'] = 0.5
         elif 'side part' in prompt_lower or 'left part' in prompt_lower:
-            params['parting'] = 0.3  # left side part
+            params['parting'] = 0.3
         elif 'right part' in prompt_lower:
-            params['parting'] = 0.7  # right side part
+            params['parting'] = 0.7
         
         # Check for bangs/fringe
         if any(x in prompt_lower for x in ['bangs', 'fringe', 'front hair']):
             params['bangs'] = 0.7
+            params['bangs_length'] = params.get('length', 0.5) * 0.7
         
-        # Check for specific hair accessories (if GBH supports)
-        if any(x in prompt_lower for x in ['headband', 'hairband']):
-            params['accessory_headband'] = 1.0
+        # Check for facial hair
+        if any(x in prompt_lower for x in ['beard', 'mustache', 'goatee', 'stubble']):
+            params['facial_hair'] = 1.0
+            if 'stubble' in prompt_lower:
+                params['beard_length'] = 0.1
+            elif 'goatee' in prompt_lower:
+                params['beard_style'] = 0.5
+            elif 'mustache' in prompt_lower:
+                params['mustache'] = 1.0
         
         return params
     
     def get_gbh_operator_sequence(self, target_object_name: str, hair_analysis: Dict) -> List[Dict]:
         """
         Generate sequence of GBH operators to execute in Blender
-        This will need to be adjusted based on the actual GBH Tool operator names
+        Using the actual GBH Tool operators from the source code
         """
         operators = []
         
@@ -254,63 +269,47 @@ class HairPropertyAnalyzer:
         if not hair_analysis.get('has_hair', True):
             return []
         
-        # Select the target object (head/character)
+        # Select the target object
         operators.append({
             'type': 'SELECT',
             'object': target_object_name
         })
         
-        # Main hair generation operator
-        # Note: You'll need to check the actual GBH operator names
-        # These are placeholders based on typical Blender add-on patterns
-        hair_op = {
-            'type': 'GBH_OT_generate_hair',  # Placeholder name
-            'properties': {
-                'target': target_object_name,
-                'hair_type': 'strands',  # or 'mesh', 'cards'
-                'density': hair_analysis.get('parameters', {}).get('density', 0.7),
-                'length': hair_analysis.get('parameters', {}).get('length', 0.5),
-                'curl': hair_analysis.get('parameters', {}).get('curl', 0.3),
-                'noise': hair_analysis.get('parameters', {}).get('noise', 0.3),
-                'parting': hair_analysis.get('parameters', {}).get('parting', 0.5),
-            }
-        }
+        # Determine conversion type
+        conversion_type = hair_analysis.get('conversion_type', 'CURVES')
         
-        # If specific style requires different generation parameters
-        style = hair_analysis.get('style')
-        if style == 'bald':
-            # Remove any existing hair? Or just not generate
+        # Main hair generation/conversion
+        # Note: GBH Tool seems to work by converting between types
+        # We'll create a base curves object and then convert as needed
+        
+        if conversion_type == 'PARTICLES':
             operators.append({
-                'type': 'GBH_OT_remove_hair',  # Placeholder
+                'type': 'GBH_OT_strands_to_particle',
                 'properties': {}
             })
-            return operators
-        
-        elif style in ['braided', 'twisted']:
-            hair_op['properties']['hair_type'] = 'strands'
-            hair_op['properties']['braid_intensity'] = hair_analysis.get('parameters', {}).get('braid_intensity', 0.8)
-        
-        elif style in ['bun', 'ponytail']:
-            hair_op['properties']['styled'] = True
-            hair_op['properties']['style_type'] = hair_analysis.get('parameters', {}).get('style_type', 1.0)
-            if style == 'bun':
-                hair_op['properties']['bun_size'] = hair_analysis.get('parameters', {}).get('bun_size', 0.7)
-            else:  # ponytail
-                hair_op['properties']['ponytail_height'] = hair_analysis.get('parameters', {}).get('ponytail_height', 0.6)
-        
-        # Add color if specified
-        if hair_analysis.get('color'):
-            hair_op['properties']['color'] = hair_analysis['color']
-        
-        operators.append(hair_op)
-        
-        # Additional refinement operators if needed
-        if hair_analysis.get('parameters', {}).get('bangs', False):
+        else:
+            # First convert to curves (if not already)
             operators.append({
-                'type': 'GBH_OT_add_bangs',  # Placeholder
+                'type': 'GBH_OT_convert_hair',
                 'properties': {
-                    'length': hair_analysis.get('parameters', {}).get('length', 0.5) * 0.7,
+                    'convert_to': 'CURVES'
                 }
+            })
+            
+            # Then convert to desired type if needed
+            if conversion_type == 'MESH':
+                operators.append({
+                    'type': 'GBH_OT_convert_hair',
+                    'properties': {
+                        'convert_to': 'MESH'
+                    }
+                })
+        
+        # Attach to surface if needed
+        if hair_analysis.get('attach_to_surface', False):
+            operators.append({
+                'type': 'GBH_OT_attach_curves_to_surface',
+                'properties': {}
             })
         
         return operators
