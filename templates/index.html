@@ -276,7 +276,99 @@
         
         <div class="input-group">
             <label for="prompt">Describe your character in detail:</label>
-            <textarea id="prompt" placeholder="Example: Create a young Indian woman with expressive brown eyes, long wavy hair, and a warm smile. She has a slender athletic build from yoga practice, high cheekbones, and olive skin. She works as a teacher and has an energetic, friendly demeanor."></textarea>
+            <textarea id="prompt" placeholder="Example: Create a young Indian woman with expressive brown eyes, long wavy hair, and a warm smile. She wears a blue t-shirt and black pants. She has a slender athletic build from yoga practice, high cheekbones, and olive skin."></textarea>
+        </div>
+
+        <div class="input-group" style="margin-top: 10px;">
+            <label>Clothing (optional - or describe in prompt above):</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px;">
+                <select id="clothingTop" style="padding: 6px 10px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #e0e0e0;">
+                    <option value="">No Top</option>
+                    <option value="tshirt">T-Shirt</option>
+                    <option value="shirt">Shirt</option>
+                    <option value="polo">Polo Shirt</option>
+                    <option value="tank_top">Tank Top</option>
+                    <option value="crop_top">Crop Top</option>
+                    <option value="tube_top">Tube Top</option>
+                    <option value="camisole">Camisole</option>
+                    <option value="bodice">Bodice Top</option>
+                    <option value="halter_top">Halter Top</option>
+                    <option value="turtleneck">Turtleneck</option>
+                    <option value="sweater">Sweater</option>
+                    <option value="jacket">Jacket</option>
+                    <option value="jumper">Jumper</option>
+                </select>
+                <select id="clothingTopColor" style="padding: 6px 10px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #e0e0e0;">
+                    <option value="white">White</option>
+                    <option value="black">Black</option>
+                    <option value="blue">Blue</option>
+                    <option value="red">Red</option>
+                    <option value="green">Green</option>
+                    <option value="gray">Gray</option>
+                    <option value="navy">Navy</option>
+                    <option value="brown">Brown</option>
+                    <option value="beige">Beige</option>
+                    <option value="pink">Pink</option>
+                    <option value="purple">Purple</option>
+                    <option value="yellow">Yellow</option>
+                    <option value="orange">Orange</option>
+                </select>
+                <select id="clothingBottom" style="padding: 6px 10px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #e0e0e0;">
+                    <option value="">No Bottom</option>
+                    <option value="pants">Pants / Trousers</option>
+                    <option value="cargo_pants">Cargo Pants</option>
+                    <option value="harem_pants">Harem Pants</option>
+                    <option value="jeans">Jeans</option>
+                    <option value="shorts">Shorts</option>
+                    <option value="jean_shorts">Jean Shorts</option>
+                    <option value="skirt">Skirt</option>
+                    <option value="mini_skirt">Mini Skirt</option>
+                    <option value="long_skirt">Long Skirt</option>
+                    <option value="lace_skirt">Lace Skirt</option>
+                    <option value="tiered_skirt">Tiered Skirt</option>
+                    <option value="leather_pants">Leather Pants</option>
+                    <option value="dress">Dress</option>
+                    <option value="flapper_dress">Flapper Dress</option>
+                    <option value="kimono">Kimono</option>
+                    <option value="halter_dress">Halter Dress</option>
+                    <option value="midi_dress">Midi Dress</option>
+                    <option value="long_dress">Long Dress</option>
+                    <option value="shift_dress">Shift Dress</option>
+                    <option value="strapless_dress">Strapless Dress</option>
+                    <option value="tunic">Tunic</option>
+                    <option value="suit">Suit</option>
+                    <option value="blazer">Blazer</option>
+                    <option value="tuxedo">Tuxedo</option>
+                </select>
+                <select id="clothingBottomColor" style="padding: 6px 10px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #e0e0e0;">
+                    <option value="black">Black</option>
+                    <option value="blue">Blue</option>
+                    <option value="white">White</option>
+                    <option value="gray">Gray</option>
+                    <option value="brown">Brown</option>
+                    <option value="navy">Navy</option>
+                    <option value="beige">Beige</option>
+                    <option value="red">Red</option>
+                    <option value="green">Green</option>
+                    <option value="pink">Pink</option>
+                    <option value="purple">Purple</option>
+                </select>
+                <select id="clothingFootwear" style="padding: 6px 10px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #e0e0e0;">
+                    <option value="">No Footwear</option>
+                    <option value="boots">Boots</option>
+                    <option value="ankle_boots">Ankle Boots</option>
+                    <option value="knee_boots">Knee-High Boots</option>
+                    <option value="combat_boots">Combat Boots</option>
+                    <option value="gogo_boots">Go-Go Boots</option>
+                    <option value="leather_boots">Leather Boots</option>
+                    <option value="stiletto_boots">Stiletto Boots</option>
+                    <option value="flats">Flats</option>
+                    <option value="ballet_flats">Ballet Flats</option>
+                    <option value="shoes">Shoes</option>
+                    <option value="heels">Heels</option>
+                    <option value="sandals">Sandals</option>
+                </select>
+            </div>
         </div>
         
                 <div class="button-group">
@@ -389,6 +481,17 @@
                 html += '</div></div>';
             }
             
+            // Add clothing info
+            if (data.clothing_analysis && data.clothing_analysis.items && data.clothing_analysis.items.length > 0) {
+                html += '<div style="margin-top: 15px; background: #fce4ec; padding: 10px; border-radius: 6px;">';
+                html += '<h5 style="margin: 0 0 8px 0; color: #880e4f;">👔 Clothing:</h5>';
+                html += '<div style="display: flex; flex-wrap: wrap; gap: 15px;">';
+                data.clothing_analysis.items.forEach(item => {
+                    html += `<span class="feature-badge" style="background: #fce4ec; color: #880e4f;">${item.color} ${item.type}</span>`;
+                });
+                html += '</div></div>';
+            }
+
             if (data.character_object) {
                 html += `<p style="margin-top: 10px;"><strong>Blender Object:</strong> ${data.character_object}</p>`;
             }
@@ -499,10 +602,25 @@
             showStatus('🔍 Detecting gender & ethnicity... 🧠 Analyzing features... 🎨 Generating character...', 'loading');
             
             try {
+                // Collect clothing selections from dropdowns
+                const clothingItems = [];
+                const topType = document.getElementById('clothingTop').value;
+                const topColor = document.getElementById('clothingTopColor').value;
+                const bottomType = document.getElementById('clothingBottom').value;
+                const bottomColor = document.getElementById('clothingBottomColor').value;
+                const footwearType = document.getElementById('clothingFootwear').value;
+
+                if (topType) clothingItems.push({type: topType, color: topColor});
+                if (bottomType) clothingItems.push({type: bottomType, color: bottomColor});
+                if (footwearType) clothingItems.push({type: footwearType, color: 'black'});
+
                 const response = await fetch('/generate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({prompt: prompt})
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        clothing: clothingItems.length > 0 ? {items: clothingItems} : null
+                    })
                 });
                 
                 const data = await response.json();

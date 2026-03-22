@@ -64,6 +64,17 @@ last_heartbeat = None
 failed_requests = 0
 max_failures = 3
 
+# File-based logging so we can read output from outside Blender
+BRIDGE_LOG = os.path.join(COMMUNICATION_DIR, "bridge_debug.log")
+def log_to_file(msg):
+    """Write a message to both console and debug log file"""
+    print(msg)
+    try:
+        with open(BRIDGE_LOG, 'a', encoding='utf-8') as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+    except:
+        pass
+
 # =============================================================================
 # HEARTBEAT FUNCTION
 # =============================================================================
@@ -253,6 +264,379 @@ def generate_hair_with_gbh(character_obj, hair_analysis):
     failed_requests += 1
     return {"success": False, "reason": "all_operators_failed"}
 
+# =============================================================================
+# CLOTHING SYSTEM - Uses CharMorph addon for proper asset fitting
+# =============================================================================
+
+# CharMorph asset paths (per gender)
+CHARMORPH_ASSETS_DIR = {
+    "female": os.path.join(
+        os.path.expanduser("~"),
+        "AppData", "Roaming", "Blender Foundation", "Blender", "4.5",
+        "scripts", "addons", "CharMorph", "data", "characters", "MB-Lab Female", "assets"
+    ),
+    "male": os.path.join(
+        os.path.expanduser("~"),
+        "AppData", "Roaming", "Blender Foundation", "Blender", "4.5",
+        "scripts", "addons", "CharMorph", "data", "characters", "MB-Lab Male", "assets"
+    ),
+}
+
+# Map clothing type keywords to CharMorph asset filenames
+# These map user-facing types to available .blend assets
+CLOTHING_ASSET_MAP = {
+    "female": {
+        # Tops
+        "tshirt": "crudefemaletshirt",
+        "shirt": "crudefemaletshirt",
+        "top": "f_top_01",
+        "tank_top": "tank_keyhole_neck",
+        "crop_top": "tube_top",
+        "tube_top": "tube_top",
+        "polo": "Polo_t-shirt",
+        "polo_shirt": "Polo_t-shirt",
+        "camisole": "camisole_top",
+        "bodice": "bodice_style_top",
+        "turtleneck": "turtleneck_halter",
+        "halter_top": "turtleneck_halter",
+        "sweater": "sweater_fisherman",
+        "jacket": "leather_top",
+        "leather_jacket": "leather_top",
+        "leather_top": "leather_top",
+        "jumper": "RGF.Diversion.jumper",
+        # Bottoms
+        "pants": "pants_wool",
+        "trousers": "pants_wool",
+        "cargo_pants": "cargo_pants",
+        "cargo": "cargo_pants",
+        "harem_pants": "pants_harem",
+        "wool_pants": "pants_wool",
+        "skirt": "mini_skirt_01",
+        "mini_skirt": "mini_skirt_02",
+        "long_skirt": "skirt_full_long",
+        "maxi_skirt": "skirt_full_long",
+        "lace_skirt": "skirt_full_lace_ruffle",
+        "tiered_skirt": "tier_skirt",
+        "tier_skirt": "tier_skirt_mini",
+        "shorts": "jean_shorts",
+        "jean_shorts": "jean_shorts",
+        "jeans": "jeans",
+        "leather_pants": "leather_btm",
+        # Dresses
+        "dress": "dress_shift",
+        "flapper_dress": "flapper_dress_1",
+        "kimono": "f_kimono",
+        "halter_dress": "dress_knee_halter",
+        "midi_dress": "dress_midi_halter",
+        "long_dress": "dress_long_fluted_skirt",
+        "strapless_dress": "dress_strapless_ruffle_top",
+        "shift_dress": "dress_shift",
+        "cutout_dress": "dress_cut_outs",
+        "ruffle_dress": "dress_bodice_ruffle_skirt",
+        "tiered_dress": "dresstierskirt",
+        "camisole_dress": "dress_camisole_full_skirt",
+        "keyhole_dress": "dress_keyhole_neck",
+        "tunic": "mycenaean_tunic",
+        # Suits
+        "suit": "fem_suit",
+        "formal_suit": "fem_suit_double_breasted",
+        "double_breasted": "fem_suit_double_breasted",
+        "blazer": "fem_suit2",
+        # Footwear
+        "boots": "heroine_boots_1",
+        "ankle_boots": "boots_ankle",
+        "knee_boots": "floppy_overknee_shoe",
+        "gogo_boots": "gogo_boots",
+        "stiletto_boots": "booties_stiletto",
+        "combat_boots": "botas_102",
+        "leather_boots": "leatherboots_2cm",
+        "platform_boots": "RGF.Platform.ankle.boots",
+        "flats": "flats_ballet",
+        "ballet_flats": "flats_ballet_bow",
+        "shoes": "flats",
+        "heels": "booties_stiletto",
+        "sandals": "tbar",
+        # Underwear & Accessories
+        "panties": "f_panties_01",
+        "thong": "strappylacethong",
+        "underwear": "f_panties_01",
+        "pantyhose": "pantyhose01",
+        "stockings": "stocking01",
+        "fishnet_stockings": "stockings_fishnet_medium",
+        "gloves": "RGF.Diversion.gloves",
+    },
+    "male": {
+        # Tops
+        "tshirt": "crude_male_shirt",
+        "shirt": "crude_male_shirt",
+        "top": "t_shirt_basic_tucked",
+        "polo": "Polo_t-shirt",
+        "polo_shirt": "Polo_t-shirt",
+        "sweater": "sweater_fisherman",
+        "jacket": "jacket_tie_pants",
+        "tunic": "mycenaean_tunic",
+        # Bottoms
+        "pants": "pants_wool",
+        "trousers": "pants_wool",
+        "cargo_pants": "cargo_pants",
+        "cargo": "cargo_pants",
+        "shorts": "jean_shorts",
+        "jean_shorts": "jean_shorts",
+        "jeans": "tactical_btm",
+        "harem_pants": "pants_harem",
+        # Suits
+        "suit": "suit_double_breasted",
+        "formal_suit": "suit3",
+        "dinner_jacket": "suit_dinner_jacket",
+        "tuxedo": "jacket_bowtie_pants",
+        "blazer": "jacket_tie_pants",
+        # Footwear
+        "boots": "hero_boots_1",
+        "combat_boots": "hero_boots_5",
+        "leather_boots": "leatherboots_2cm",
+        "ankle_boots": "boots_ankle_male",
+        "shoes": "mj_shoes",
+        "dress_shoes": "mj_shoes",
+    },
+}
+
+CLOTHING_COLORS = {
+    "white": (1.0, 1.0, 1.0, 1.0),
+    "black": (0.02, 0.02, 0.02, 1.0),
+    "red": (0.8, 0.1, 0.1, 1.0),
+    "blue": (0.1, 0.2, 0.8, 1.0),
+    "green": (0.1, 0.6, 0.2, 1.0),
+    "gray": (0.4, 0.4, 0.4, 1.0),
+    "brown": (0.4, 0.25, 0.1, 1.0),
+    "navy": (0.05, 0.1, 0.3, 1.0),
+    "beige": (0.76, 0.7, 0.5, 1.0),
+    "pink": (0.9, 0.5, 0.6, 1.0),
+    "yellow": (0.9, 0.85, 0.2, 1.0),
+    "purple": (0.5, 0.1, 0.6, 1.0),
+    "orange": (0.9, 0.5, 0.1, 1.0),
+}
+
+
+def set_clothing_color(obj, color_name):
+    """Apply a color material to a clothing object"""
+    rgba = CLOTHING_COLORS.get(color_name, CLOTHING_COLORS["white"])
+    mat_name = f"Clothing_{obj.name}_{color_name}"
+    mat = bpy.data.materials.new(name=mat_name)
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = rgba
+        bsdf.inputs["Roughness"].default_value = 0.7
+    obj.data.materials.clear()
+    obj.data.materials.append(mat)
+
+
+def find_asset_blend(gender, clothing_type):
+    """Find the .blend file for a clothing asset"""
+    gender_key = gender.lower() if gender.lower() in CLOTHING_ASSET_MAP else "female"
+    asset_map = CLOTHING_ASSET_MAP.get(gender_key, {})
+    asset_name = asset_map.get(clothing_type)
+
+    if not asset_name:
+        log_to_file(f"    No asset mapping for '{clothing_type}' ({gender_key})")
+        return None, None
+
+    assets_dir = CHARMORPH_ASSETS_DIR.get(gender_key, "")
+
+    # Check for direct .blend file
+    blend_path = os.path.join(assets_dir, f"{asset_name}.blend")
+    if os.path.exists(blend_path):
+        return blend_path, asset_name
+
+    # Check for subdirectory with asset.blend
+    subdir_path = os.path.join(assets_dir, asset_name, "asset.blend")
+    if os.path.exists(subdir_path):
+        return subdir_path, asset_name
+
+    log_to_file(f"    Asset file not found: {blend_path}")
+    return None, None
+
+
+def import_clothing_from_blend(blend_path, asset_name):
+    """Import a clothing mesh from a .blend file"""
+    log_to_file(f"    Importing from: {blend_path}")
+
+    # List objects in the blend file
+    with bpy.data.libraries.load(blend_path) as (data_from, data_to):
+        # Import all objects from the file
+        data_to.objects = data_from.objects[:]
+        log_to_file(f"    Found objects: {data_from.objects[:]}")
+
+    # Link imported objects to the scene
+    imported = []
+    for obj in data_to.objects:
+        if obj is not None:
+            bpy.context.collection.objects.link(obj)
+            imported.append(obj)
+            log_to_file(f"    Linked: {obj.name} (type={obj.type})")
+
+    # Return the first mesh object
+    for obj in imported:
+        if obj.type == 'MESH':
+            return obj
+
+    return None
+
+
+def fit_with_charmorph(character_obj, asset_obj):
+    """Use CharMorph's fitting system to fit an asset to the character"""
+    try:
+        # Set up CharMorph UI properties
+        ui = bpy.context.window_manager.charmorph_ui
+        ui.fitting_char = character_obj
+        ui.fitting_asset = asset_obj
+        ui.fitting_transforms = True
+
+        # Call the fit operator
+        result = bpy.ops.charmorph.fit_local()
+        log_to_file(f"    CharMorph fit result: {result}")
+        return result == {'FINISHED'}
+    except Exception as e:
+        log_to_file(f"    CharMorph fit failed: {e}")
+        return False
+
+
+def fit_with_mblab(character_obj, asset_obj):
+    """Fallback: use MB-Lab proxy fitting"""
+    try:
+        # Select both character and asset
+        bpy.ops.object.select_all(action='DESELECT')
+        character_obj.select_set(True)
+        asset_obj.select_set(True)
+        bpy.context.view_layer.objects.active = character_obj
+
+        # Set MB-Lab proxy properties
+        scn = bpy.context.scene
+        scn.mblab_proxy_offset = 0
+        scn.mblab_proxy_threshold = 500
+        scn.mblab_add_mask_group = True
+        scn.mblab_transfer_proxy_weights = True
+
+        result = bpy.ops.mbast.proxy_fit()
+        log_to_file(f"    MB-Lab proxy fit result: {result}")
+        return result == {'FINISHED'}
+    except Exception as e:
+        log_to_file(f"    MB-Lab fit failed: {e}")
+        return False
+
+
+def generate_clothing_piece(character_obj, clothing_type, color="white", gender="female"):
+    """
+    Generate a clothing piece using CharMorph/MB-Lab asset fitting.
+    Imports the asset .blend, fits it to the character, and applies color.
+    """
+    log_to_file(f"  Creating {clothing_type} ({color}) for {gender}...")
+
+    if bpy.context.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Find the asset blend file
+    blend_path, asset_name = find_asset_blend(gender, clothing_type)
+    if not blend_path:
+        log_to_file(f"  No asset found for {clothing_type}")
+        return None
+
+    # Import the clothing mesh
+    asset_obj = import_clothing_from_blend(blend_path, asset_name)
+    if not asset_obj:
+        log_to_file(f"  Failed to import clothing mesh")
+        return None
+
+    log_to_file(f"    Imported clothing: {asset_obj.name}")
+
+    # Try CharMorph fitting first, fall back to MB-Lab
+    fitted = fit_with_charmorph(character_obj, asset_obj)
+    if not fitted:
+        log_to_file(f"    Trying MB-Lab fallback...")
+        fitted = fit_with_mblab(character_obj, asset_obj)
+
+    if not fitted:
+        log_to_file(f"    WARNING: Fitting failed, clothing placed without fitting")
+
+    # Apply color
+    set_clothing_color(asset_obj, color)
+
+    log_to_file(f"  DONE: {clothing_type} fitted and colored ({color})")
+    return asset_obj
+
+
+def remove_existing_clothing():
+    """Remove any previously generated/fitted clothing objects"""
+    to_remove = []
+    for obj in bpy.data.objects:
+        if obj.type == 'MESH' and 'charmorph_fit_id' in obj.data:
+            to_remove.append(obj)
+        elif obj.name.startswith("Clothing_"):
+            to_remove.append(obj)
+
+    for obj in to_remove:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+    if to_remove:
+        log_to_file(f"  Removed {len(to_remove)} existing clothing objects")
+
+
+def apply_clothing_from_analysis(character_obj, clothing_data, gender="female"):
+    """
+    Main entry point for clothing generation using CharMorph fitting.
+    """
+    if not clothing_data or not clothing_data.get("items"):
+        log_to_file("No clothing requested")
+        return {"success": True, "clothing_generated": False}
+
+    log_to_file(f"\n{'='*60}")
+    log_to_file(f"GENERATING CLOTHING ({len(clothing_data['items'])} items)")
+    log_to_file(f"{'='*60}")
+
+    # Remove old clothing
+    remove_existing_clothing()
+
+    results = []
+    for item in clothing_data["items"]:
+        clothing_type = item.get("type", "").lower()
+        color = item.get("color", "white").lower()
+
+        try:
+            obj = generate_clothing_piece(character_obj, clothing_type, color, gender)
+            if obj:
+                results.append({
+                    "type": clothing_type,
+                    "color": color,
+                    "object": obj.name,
+                    "success": True
+                })
+            else:
+                results.append({
+                    "type": clothing_type,
+                    "success": False,
+                    "reason": "asset_not_found"
+                })
+        except Exception as e:
+            log_to_file(f"  Error creating {clothing_type}: {e}")
+            traceback.print_exc()
+            results.append({
+                "type": clothing_type,
+                "success": False,
+                "reason": str(e)
+            })
+
+    bpy.context.view_layer.update()
+
+    success_count = sum(1 for r in results if r["success"])
+    log_to_file(f"Clothing complete: {success_count}/{len(results)} items")
+
+    return {
+        "success": success_count > 0,
+        "clothing_generated": True,
+        "items": results
+    }
+
+
 def apply_hair_from_analysis(character_obj, hair_analysis):
     """Wrapper for hair generation with error handling"""
     try:
@@ -351,6 +735,7 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
         "morphs_failed": 0,
         "morph_details": [],
         "hair_result": {"success": False, "hair_generated": False},
+        "clothing_result": {"success": False, "clothing_generated": False},
         "errors": []
     }
     
@@ -393,7 +778,28 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
                 print(f"⚠️ Hair generation issue: {hair_result.get('reason', 'unknown')}")
         else:
             print("\n--- No hair analysis available ---")
-        
+
+        # Step 3: Generate clothing
+        clothing_data = structured_data.get("clothing", {})
+        log_to_file(f"Clothing data received: {clothing_data}")
+        if clothing_data and clothing_data.get("items"):
+            log_to_file(f"Generating Clothing ({len(clothing_data['items'])} items)")
+            try:
+                clothing_result = apply_clothing_from_analysis(character_obj, clothing_data, gender)
+                results["clothing_result"] = clothing_result
+
+                if clothing_result.get("success"):
+                    items_created = sum(1 for i in clothing_result.get("items", []) if i.get("success"))
+                    log_to_file(f"Clothing generation successful: {items_created} items")
+                else:
+                    log_to_file(f"Clothing generation failed: {clothing_result}")
+            except Exception as clothing_err:
+                log_to_file(f"CLOTHING ERROR: {clothing_err}")
+                log_to_file(traceback.format_exc())
+                results["errors"].append(f"Clothing error: {clothing_err}")
+        else:
+            log_to_file("No clothing requested")
+
     except Exception as e:
         error_msg = f"Error in process_enhanced_properties: {e}"
         print(f"✗ {error_msg}")

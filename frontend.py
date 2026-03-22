@@ -687,6 +687,136 @@ print("=== BLENDER BRIDGE AUTO-STARTED ===")
         return {"success": False, "error": f"Failed to start Blender: {str(e)}"}
 
 # =============================================================================
+# CLOTHING ANALYSIS
+# =============================================================================
+
+CLOTHING_KEYWORDS = {
+    # Tops
+    "tshirt": ["t-shirt", "tshirt", "t shirt", "tee"],
+    "shirt": ["shirt", "button-up", "button up"],
+    "polo": ["polo", "polo shirt"],
+    "top": ["top", "blouse"],
+    "tank_top": ["tank top", "tank", "sleeveless top", "vest top", "singlet"],
+    "crop_top": ["crop top", "cropped top"],
+    "tube_top": ["tube top", "bandeau"],
+    "camisole": ["camisole", "cami"],
+    "bodice": ["bodice", "corset top"],
+    "turtleneck": ["turtleneck", "turtle neck"],
+    "halter_top": ["halter top", "halter neck"],
+    "jacket": ["jacket", "coat"],
+    "leather_jacket": ["leather jacket"],
+    "jumper": ["jumper", "pullover"],
+    "sweater": ["sweater", "sweatshirt", "hoodie", "cardigan"],
+    # Bottoms
+    "pants": ["pants", "trousers", "slacks", "chinos"],
+    "cargo_pants": ["cargo pants", "cargo"],
+    "harem_pants": ["harem pants", "harem"],
+    "wool_pants": ["wool pants", "wool trousers"],
+    "jeans": ["jeans", "denim"],
+    "shorts": ["shorts", "short pants", "bermuda"],
+    "jean_shorts": ["jean shorts", "denim shorts", "cutoffs"],
+    "skirt": ["skirt"],
+    "mini_skirt": ["mini skirt", "miniskirt"],
+    "long_skirt": ["long skirt", "maxi skirt"],
+    "lace_skirt": ["lace skirt"],
+    "tiered_skirt": ["tiered skirt", "tier skirt", "ruffle skirt"],
+    "leather_pants": ["leather pants", "leather trousers"],
+    # Dresses
+    "dress": ["dress", "gown", "sundress", "frock"],
+    "flapper_dress": ["flapper dress", "flapper"],
+    "kimono": ["kimono"],
+    "halter_dress": ["halter dress"],
+    "midi_dress": ["midi dress"],
+    "long_dress": ["long dress", "maxi dress", "evening gown"],
+    "strapless_dress": ["strapless dress", "strapless"],
+    "shift_dress": ["shift dress"],
+    "tunic": ["tunic"],
+    # Suits
+    "suit": ["suit", "formal suit", "business suit"],
+    "blazer": ["blazer"],
+    "tuxedo": ["tuxedo", "tux"],
+    "dinner_jacket": ["dinner jacket"],
+    # Footwear
+    "boots": ["boots"],
+    "combat_boots": ["combat boots", "military boots"],
+    "ankle_boots": ["ankle boots", "ankle boot", "booties"],
+    "knee_boots": ["knee boots", "knee-high boots", "over-knee boots"],
+    "gogo_boots": ["gogo boots", "go-go boots"],
+    "stiletto_boots": ["stiletto boots", "stiletto"],
+    "leather_boots": ["leather boots"],
+    "platform_boots": ["platform boots", "platform shoes"],
+    "flats": ["flats", "flat shoes"],
+    "ballet_flats": ["ballet flats", "ballet shoes"],
+    "shoes": ["shoes", "loafers"],
+    "heels": ["heels", "high heels", "pumps"],
+    "sandals": ["sandals", "t-bar", "open toe"],
+    # Underwear & Accessories
+    "panties": ["panties", "underwear"],
+    "thong": ["thong"],
+    "pantyhose": ["pantyhose", "tights"],
+    "stockings": ["stockings"],
+    "fishnet_stockings": ["fishnet", "fishnet stockings"],
+    "gloves": ["gloves", "leather gloves"],
+}
+
+COLOR_KEYWORDS = [
+    "white", "black", "red", "blue", "green", "gray", "grey", "brown",
+    "navy", "beige", "pink", "yellow", "purple", "orange",
+]
+
+
+def analyze_clothing_from_prompt(prompt):
+    """Detect clothing items and colors from user prompt"""
+    prompt_lower = prompt.lower()
+    items = []
+    detected_types = set()
+    matched_positions = []  # track matched text spans to avoid overlaps
+
+    # Sort by longest keyword first to prevent partial matches
+    all_matches = []
+    for clothing_type, keywords in CLOTHING_KEYWORDS.items():
+        for keyword in keywords:
+            pos = prompt_lower.find(keyword)
+            if pos != -1:
+                all_matches.append((pos, len(keyword), clothing_type, keyword))
+
+    # Sort by keyword length descending (longest first), then position
+    all_matches.sort(key=lambda x: (-x[1], x[0]))
+
+    for pos, length, clothing_type, keyword in all_matches:
+        if clothing_type in detected_types:
+            continue
+
+        # Check if this position overlaps with an already matched span
+        overlaps = False
+        for m_start, m_end in matched_positions:
+            if pos < m_end and pos + length > m_start:
+                overlaps = True
+                break
+        if overlaps:
+            continue
+
+        detected_types.add(clothing_type)
+        matched_positions.append((pos, pos + length))
+
+        # Find the color closest to this keyword in the prompt
+        color = "white"
+        best_dist = 999
+        for c in COLOR_KEYWORDS:
+            c_pos = prompt_lower.find(c)
+            if c_pos != -1:
+                # Distance from color word to clothing keyword
+                dist = abs(c_pos - pos)
+                if dist < best_dist and dist < 50:
+                    best_dist = dist
+                    color = c if c != "grey" else "gray"
+
+        items.append({"type": clothing_type, "color": color})
+
+    return {"items": items}
+
+
+# =============================================================================
 # ENHANCED PROPERTY MAPPING WITH LLM
 # =============================================================================
 
@@ -879,7 +1009,8 @@ def generate_character():
     
     try:
         user_prompt = request.json.get('prompt', '')
-        
+        ui_clothing = request.json.get('clothing', None)  # Clothing from UI dropdowns
+
         if not user_prompt:
             return jsonify({"error": "No prompt provided"}), 400
         
@@ -943,7 +1074,31 @@ def generate_character():
             print("✓ LLM analysis completed (no additional properties)")
     
 
-        # STEP 3.5: Analyze hair (new)
+        # STEP 3.5a: Analyze clothing from prompt + UI selections
+        print("\n👔 Step 3.5a: Analyzing clothing...")
+        # Merge UI selections with prompt detection
+        prompt_clothing = analyze_clothing_from_prompt(user_prompt)
+        ui_items = ui_clothing.get("items", []) if ui_clothing else []
+        prompt_items = prompt_clothing.get("items", [])
+
+        # Combine: UI items first, then any prompt items not already covered
+        ui_types = {item["type"] for item in ui_items}
+        merged_items = list(ui_items)
+        for item in prompt_items:
+            if item["type"] not in ui_types:
+                merged_items.append(item)
+
+        clothing_data = {"items": merged_items}
+
+        if merged_items:
+            print(f"✓ Clothing items: {len(merged_items)}")
+            for item in merged_items:
+                src = "UI" if item["type"] in ui_types else "prompt"
+                print(f"  - {item['type']} ({item.get('color', 'white')}) [{src}]")
+        else:
+            print("  No specific clothing detected")
+
+        # STEP 3.5b: Analyze hair (new)
         print("\n💇 Step 3.5: Analyzing hair from prompt...")
         try:
             from hair_generator import hair_analyzer
@@ -977,7 +1132,8 @@ def generate_character():
             "ethnicity": detected_ethnicity,
             "property_count": len(final_properties),
             "features_detected": list(nlp_features.keys()),
-            "hair_analysis": hair_analysis  # Add hair analysis
+            "hair_analysis": hair_analysis,  # Add hair analysis
+            "clothing": clothing_data  # Add clothing data
         }
         
         # Create request for Blender
@@ -1022,7 +1178,8 @@ def generate_character():
                     "gender": detected_gender,
                     "ethnicity": detected_ethnicity,
                     "character_object": response_data.get("character_object", "unknown"),
-                    "hair_analysis": hair_analysis  # Add hair info to response
+                    "hair_analysis": hair_analysis,  # Add hair info to response
+                    "clothing_analysis": clothing_data  # Add clothing info to response
                 })
             
             time.sleep(0.5)
