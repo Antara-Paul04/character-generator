@@ -1,10 +1,16 @@
 from flask import Flask, render_template, request, jsonify
 import json
 import os
+import io
 import time
 import subprocess
 import sys
 from datetime import datetime
+
+# Fix Windows Unicode encoding issues
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch

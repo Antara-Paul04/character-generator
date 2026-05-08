@@ -286,117 +286,51 @@ CHARMORPH_ASSETS_DIR = {
 # These map user-facing types to available .blend assets
 CLOTHING_ASSET_MAP = {
     "female": {
-        # Tops
-        "tshirt": "crudefemaletshirt",
-        "shirt": "crudefemaletshirt",
-        "top": "f_top_01",
-        "tank_top": "tank_keyhole_neck",
-        "crop_top": "tube_top",
-        "tube_top": "tube_top",
-        "polo": "Polo_t-shirt",
-        "polo_shirt": "Polo_t-shirt",
-        "camisole": "camisole_top",
-        "bodice": "bodice_style_top",
-        "turtleneck": "turtleneck_halter",
-        "halter_top": "turtleneck_halter",
-        "sweater": "sweater_fisherman",
-        "jacket": "leather_top",
-        "leather_jacket": "leather_top",
-        "leather_top": "leather_top",
+        # Tops (CharMorph native assets - these fit MB-Lab bodies)
+        "tshirt": "casualsuit01_top",
+        "shirt": "casualsuit01_top",
+        "top": "casualsuit01_top",
+        "tank_top": "RGF.crop.top.shirt",
+        "crop_top": "RGF.crop.top.shirt",
+        "jacket": "RGF.Diversion.jumper",
         "jumper": "RGF.Diversion.jumper",
+        "sweater": "RGF.Diversion.jumper",
         # Bottoms
-        "pants": "pants_wool",
-        "trousers": "pants_wool",
-        "cargo_pants": "cargo_pants",
-        "cargo": "cargo_pants",
-        "harem_pants": "pants_harem",
-        "wool_pants": "pants_wool",
-        "skirt": "mini_skirt_01",
-        "mini_skirt": "mini_skirt_02",
-        "long_skirt": "skirt_full_long",
-        "maxi_skirt": "skirt_full_long",
-        "lace_skirt": "skirt_full_lace_ruffle",
-        "tiered_skirt": "tier_skirt",
-        "tier_skirt": "tier_skirt_mini",
-        "shorts": "jean_shorts",
-        "jean_shorts": "jean_shorts",
+        "pants": "trousers",
+        "trousers": "trousers",
+        "dress_pants": "trousers_01",
+        "skirt": "elegantsuit01_btm",
+        "shorts": "casualsuit01_btm",
         "jeans": "jeans",
-        "leather_pants": "leather_btm",
+        "cargo_pants": "RGF.pants",
+        "sport_pants": "sportsuit01_btm",
+        "motorcycle_pants": "Motorcyclepants",
+        "casual_pants": "casualsuit02_btm",
         # Dresses
-        "dress": "dress_shift",
-        "flapper_dress": "flapper_dress_1",
-        "kimono": "f_kimono",
-        "halter_dress": "dress_knee_halter",
-        "midi_dress": "dress_midi_halter",
-        "long_dress": "dress_long_fluted_skirt",
-        "strapless_dress": "dress_strapless_ruffle_top",
-        "shift_dress": "dress_shift",
-        "cutout_dress": "dress_cut_outs",
-        "ruffle_dress": "dress_bodice_ruffle_skirt",
-        "tiered_dress": "dresstierskirt",
-        "camisole_dress": "dress_camisole_full_skirt",
-        "keyhole_dress": "dress_keyhole_neck",
-        "tunic": "mycenaean_tunic",
-        # Suits
-        "suit": "fem_suit",
-        "formal_suit": "fem_suit_double_breasted",
-        "double_breasted": "fem_suit_double_breasted",
-        "blazer": "fem_suit2",
+        "dress": "elegantsuit01_btm",
         # Footwear
-        "boots": "heroine_boots_1",
-        "ankle_boots": "boots_ankle",
-        "knee_boots": "floppy_overknee_shoe",
-        "gogo_boots": "gogo_boots",
-        "stiletto_boots": "booties_stiletto",
-        "combat_boots": "botas_102",
-        "leather_boots": "leatherboots_2cm",
+        "boots": "tactical_boots",
+        "ankle_boots": "RGF.Platform.ankle.boots",
         "platform_boots": "RGF.Platform.ankle.boots",
-        "flats": "flats_ballet",
-        "ballet_flats": "flats_ballet_bow",
-        "shoes": "flats",
-        "heels": "booties_stiletto",
-        "sandals": "tbar",
-        # Underwear & Accessories
-        "panties": "f_panties_01",
-        "thong": "strappylacethong",
-        "underwear": "f_panties_01",
-        "pantyhose": "pantyhose01",
-        "stockings": "stocking01",
-        "fishnet_stockings": "stockings_fishnet_medium",
+        "shoes": "RGF.DNA.boots",
+        # Accessories
         "gloves": "RGF.Diversion.gloves",
+        "thong": "RGF.thongs",
+        "underwear": "RGF.thongs",
     },
     "male": {
-        # Tops
-        "tshirt": "crude_male_shirt",
-        "shirt": "crude_male_shirt",
-        "top": "t_shirt_basic_tucked",
-        "polo": "Polo_t-shirt",
-        "polo_shirt": "Polo_t-shirt",
-        "sweater": "sweater_fisherman",
-        "jacket": "jacket_tie_pants",
-        "tunic": "mycenaean_tunic",
-        # Bottoms
-        "pants": "pants_wool",
-        "trousers": "pants_wool",
-        "cargo_pants": "cargo_pants",
-        "cargo": "cargo_pants",
-        "shorts": "jean_shorts",
-        "jean_shorts": "jean_shorts",
+        "tshirt": "tactical_top",
+        "shirt": "tactical_top",
+        "top": "tactical_top",
+        "tank_top": "tactical_top",
+        "jacket": "tactical_top",
+        "sweater": "tactical_top",
+        "pants": "tactical_btm",
+        "trousers": "tactical_btm",
+        "shorts": "tactical_btm",
         "jeans": "tactical_btm",
-        "harem_pants": "pants_harem",
-        # Suits
-        "suit": "suit_double_breasted",
-        "formal_suit": "suit3",
-        "dinner_jacket": "suit_dinner_jacket",
-        "tuxedo": "jacket_bowtie_pants",
-        "blazer": "jacket_tie_pants",
-        # Footwear
-        "boots": "hero_boots_1",
-        "combat_boots": "hero_boots_5",
-        "leather_boots": "leatherboots_2cm",
-        "ankle_boots": "boots_ankle_male",
-        "shoes": "mj_shoes",
-        "dress_shoes": "mj_shoes",
+        "boots": "tactical_boots",
+        "shoes": "tactical_boots",
     },
 }
 
@@ -486,13 +420,10 @@ def import_clothing_from_blend(blend_path, asset_name):
 def fit_with_charmorph(character_obj, asset_obj):
     """Use CharMorph's fitting system to fit an asset to the character"""
     try:
-        # Set up CharMorph UI properties
         ui = bpy.context.window_manager.charmorph_ui
         ui.fitting_char = character_obj
         ui.fitting_asset = asset_obj
         ui.fitting_transforms = True
-
-        # Call the fit operator
         result = bpy.ops.charmorph.fit_local()
         log_to_file(f"    CharMorph fit result: {result}")
         return result == {'FINISHED'}
@@ -501,34 +432,9 @@ def fit_with_charmorph(character_obj, asset_obj):
         return False
 
 
-def fit_with_mblab(character_obj, asset_obj):
-    """Fallback: use MB-Lab proxy fitting"""
-    try:
-        # Select both character and asset
-        bpy.ops.object.select_all(action='DESELECT')
-        character_obj.select_set(True)
-        asset_obj.select_set(True)
-        bpy.context.view_layer.objects.active = character_obj
-
-        # Set MB-Lab proxy properties
-        scn = bpy.context.scene
-        scn.mblab_proxy_offset = 0
-        scn.mblab_proxy_threshold = 500
-        scn.mblab_add_mask_group = True
-        scn.mblab_transfer_proxy_weights = True
-
-        result = bpy.ops.mbast.proxy_fit()
-        log_to_file(f"    MB-Lab proxy fit result: {result}")
-        return result == {'FINISHED'}
-    except Exception as e:
-        log_to_file(f"    MB-Lab fit failed: {e}")
-        return False
-
-
 def generate_clothing_piece(character_obj, clothing_type, color="white", gender="female"):
     """
-    Generate a clothing piece using CharMorph/MB-Lab asset fitting.
-    Imports the asset .blend, fits it to the character, and applies color.
+    Generate a clothing piece using CharMorph fitting with original CharMorph assets.
     """
     log_to_file(f"  Creating {clothing_type} ({color}) for {gender}...")
 
@@ -549,14 +455,11 @@ def generate_clothing_piece(character_obj, clothing_type, color="white", gender=
 
     log_to_file(f"    Imported clothing: {asset_obj.name}")
 
-    # Try CharMorph fitting first, fall back to MB-Lab
+    # Fit using CharMorph (works with CharMorph-native assets)
     fitted = fit_with_charmorph(character_obj, asset_obj)
-    if not fitted:
-        log_to_file(f"    Trying MB-Lab fallback...")
-        fitted = fit_with_mblab(character_obj, asset_obj)
 
     if not fitted:
-        log_to_file(f"    WARNING: Fitting failed, clothing placed without fitting")
+        log_to_file(f"    WARNING: CharMorph fitting failed")
 
     # Apply color
     set_clothing_color(asset_obj, color)
