@@ -417,67 +417,84 @@ def import_clothing_from_blend(blend_path, asset_name):
     return None
 
 
-def fit_with_charmorph_and_move(character_obj, asset_obj):
+def _refresh_charmorph_morpher(target):
+    """Reset CharMorph's cached morpher so the next fit uses the *current*
+    shape of `target` instead of a stale base-shape diff."""
+    try:
+        import importlib
+        cm_common = importlib.import_module("CharMorph.common")
+        mm = cm_common.manager
+        mm.del_charmorphs()
+        mm.create_charmorphs(target)
+        log_to_file(f"    Refreshed CharMorph morpher for {target.name}")
+    except Exception as e:
+        log_to_file(f"    Warning: could not refresh morpher: {e}")
+
+
+def _charmorph_fit(target, asset):
+    """Run CharMorph fit_local with `target` as the character and `asset`
+    as the clothing item. Returns True on success."""
+    bpy.ops.object.select_all(action='DESELECT')
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = target
+
+    # CharMorph's binder (and its apply_transforms step) assumes the asset's
+    # verts overlap the character's verts in WORLD space. The asset is freshly
+    # imported at world origin — fine when the character is also at origin
+    # (mb_female case), but when mb_male is offset (e.g. x=1.527), the binding
+    # looks up asset verts at the wrong spot and the clothes both fit-fail
+    # AND end up rendered at the female's position. Pre-position the asset on
+    # top of the character before fitting.
+    asset.matrix_world = target.matrix_world.copy()
+
+    _refresh_charmorph_morpher(target)
+
+    ui = bpy.context.window_manager.charmorph_ui
+    ui.fitting_char = target
+    ui.fitting_asset = asset
+    ui.fitting_transforms = True
+
+    result = bpy.ops.charmorph.fit_local()
+    log_to_file(f"    CharMorph fit ({target.name} <- {asset.name}): {result}")
+    return result == {'FINISHED'}
+
+
+def _parent_unparented(asset, character):
+    """Parent the asset to the character so it FOLLOWS the character.
+
+    CharMorph's `fit_local` calls `apply_transforms(asset, char)` which bakes
+    the asset's mesh into the character's local space and zeroes the asset's
+    own transform. With matrix_parent_inverse = Identity, the asset's world
+    matrix becomes the character's world matrix — which is what we want, so
+    the clothing displays at the character's actual world position rather
+    than at world origin.
     """
-    Use CharMorph to fit the clothing shape (it always fits to female),
-    then move the fitted clothing to the correct character's position.
+    import mathutils as _mu
+    if asset.parent is None:
+        asset.parent = character
+        asset.matrix_parent_inverse = _mu.Matrix.Identity(4)
+
+
+def fit_with_charmorph_and_move(character_obj, asset_obj):
+    """Fit clothing to the character directly.
+
+    Each gender's asset library lives in its own folder (MB-Lab Female /
+    MB-Lab Male) and is shaped for that gender's topology, so we just fit
+    the imported asset straight to whoever was passed in. The earlier
+    "fit-to-female-then-refit-to-male" detour produced floating fragments
+    because CharMorph's binding doesn't transfer cleanly between characters.
+
+    Returns the asset object on success, None on failure.
     """
     try:
-        female_obj = None
-        for obj in bpy.data.objects:
-            if obj.type == 'MESH' and 'mb_female' in obj.name.lower():
-                female_obj = obj
-                break
-
-        fit_target = female_obj if female_obj else character_obj
-        bpy.ops.object.select_all(action='DESELECT')
-        fit_target.select_set(True)
-        bpy.context.view_layer.objects.active = fit_target
-
-        # Force CharMorph to rebuild its morpher (and Fitter) for the *current*
-        # morphed shape. Without this, the cached `diff_arr` from when shape
-        # keys were at zero is reused, and clothing gets fitted to the base
-        # body — making oversized characters look naked-with-tiny-clothes.
-        try:
-            import importlib
-            cm_common = importlib.import_module("CharMorph.common")
-            mm = cm_common.manager
-            mm.del_charmorphs()
-            mm.create_charmorphs(fit_target)
-            log_to_file(f"    Refreshed CharMorph morpher for {fit_target.name}")
-        except Exception as e:
-            log_to_file(f"    Warning: could not refresh morpher: {e}")
-
-        ui = bpy.context.window_manager.charmorph_ui
-        ui.fitting_char = fit_target
-        ui.fitting_asset = asset_obj
-        ui.fitting_transforms = True
-
-        result = bpy.ops.charmorph.fit_local()
-        log_to_file(f"    CharMorph fit result: {result}")
-
-        if result != {'FINISHED'}:
-            return False
-
-        if character_obj != fit_target:
-            log_to_file(f"    Moving clothing from {fit_target.name} to {character_obj.name}")
-            offset = character_obj.location - fit_target.location
-            world_matrix = asset_obj.matrix_world.copy()
-            asset_obj.parent = None
-            asset_obj.matrix_world = world_matrix
-            asset_obj.location += offset
-            asset_obj.parent = character_obj
-            asset_obj.matrix_parent_inverse = character_obj.matrix_world.inverted()
-        else:
-            if not asset_obj.parent:
-                asset_obj.parent = character_obj
-                asset_obj.matrix_parent_inverse = character_obj.matrix_world.inverted()
-
-        return True
+        if not _charmorph_fit(character_obj, asset_obj):
+            return None
+        _parent_unparented(asset_obj, character_obj)
+        return asset_obj
     except Exception as e:
         log_to_file(f"    CharMorph fit failed: {e}")
         log_to_file(traceback.format_exc())
-        return False
+        return None
 
 
 def generate_clothing_piece(character_obj, clothing_type, color="white", gender="female"):
@@ -503,44 +520,64 @@ def generate_clothing_piece(character_obj, clothing_type, color="white", gender=
 
     log_to_file(f"    Imported clothing: {asset_obj.name}")
 
-    # Fit using CharMorph (fits to female shape), then move to correct character
-    fitted = fit_with_charmorph_and_move(character_obj, asset_obj)
+    # Fit using CharMorph. For male this returns a duplicate fitted to him
+    # (and deletes the female-side original).
+    final_asset = fit_with_charmorph_and_move(character_obj, asset_obj)
 
-    if not fitted:
+    if final_asset is None:
         log_to_file(f"    WARNING: CharMorph fitting failed")
+        # Fall back to the imported object if it still exists
+        try:
+            final_asset = asset_obj if asset_obj.name in bpy.data.objects else None
+        except ReferenceError:
+            final_asset = None
+        if final_asset is None:
+            return None
 
-    # Apply color
-    set_clothing_color(asset_obj, color)
+    # Apply color to whichever object actually lives on the character now
+    set_clothing_color(final_asset, color)
 
     log_to_file(f"  DONE: {clothing_type} fitted and colored ({color})")
-    return asset_obj
+    return final_asset
 
 
 def remove_existing_clothing(character_obj=None):
-    """Remove every previously fitted/generated clothing item in the scene.
+    """Remove clothing parented to *this* character only.
 
-    Catches anything that was created by CharMorph fitting or this bridge's
-    own clothing pipeline, regardless of parenting — clothing that ends up
-    parented to an armature or to a different character instance otherwise
-    survives between generations and shows up oversized on the new body.
+    Critically, when called with a male character, this must NOT delete the
+    female's clothes — each character keeps their own wardrobe between
+    generations. We also walk the parent chain so clothing parented through
+    an intermediate (e.g. armature) still gets matched to its character.
     """
+    if character_obj is None:
+        return
+
+    def belongs_to(obj, char):
+        cur = obj.parent
+        seen = set()
+        while cur and cur not in seen:
+            if cur is char:
+                return True
+            seen.add(cur)
+            cur = cur.parent
+        return False
+
     to_remove = []
     for obj in bpy.data.objects:
         if obj.type != 'MESH':
             continue
         is_fitted = 'charmorph_fit_id' in obj.data
         is_clothing = obj.name.startswith("Clothing_")
-        # Heuristic: any mesh whose name matches CharMorph asset patterns
-        # (e.g. "casualsuit01_top", "RGF.crop.top.shirt") that's not the
-        # character body itself is treated as stale clothing.
-        if is_fitted or is_clothing:
+        if not (is_fitted or is_clothing):
+            continue
+        if belongs_to(obj, character_obj):
             to_remove.append(obj)
 
     for obj in to_remove:
         bpy.data.objects.remove(obj, do_unlink=True)
 
     if to_remove:
-        log_to_file(f"  Removed {len(to_remove)} existing clothing objects")
+        log_to_file(f"  Removed {len(to_remove)} clothing items from {character_obj.name}")
 
 
 def apply_clothing_from_analysis(character_obj, clothing_data, gender="female"):
@@ -734,14 +771,41 @@ def apply_authored_hair_style(character_obj, gender, hair_analysis):
             braids_mod.show_render = False
         # else: leave braids in whatever the authored .blend has
 
-    rgba = HAIR_COLOR_PALETTE.get(color)
-    if rgba is not None:
-        mat = bpy.data.materials.get("Hair Black")
-        if mat and mat.node_tree:
-            for node in mat.node_tree.nodes:
-                if node.type == "BSDF_PRINCIPLED":
-                    node.inputs["Base Color"].default_value = rgba
-                    break
+    # Always reset hair color, defaulting to black, so a previous generation's
+    # blonde doesn't leak into the next prompt's "black braids".
+    rgba = HAIR_COLOR_PALETTE.get(color, HAIR_COLOR_PALETTE["black"])
+
+    # Use a per-gender hair material so updating the male's hair color doesn't
+    # recolor the female's hair (and vice-versa). Clone from the existing
+    # "Hair Black" template the first time and reuse thereafter.
+    per_gender_mat_name = "Hair_Male" if str(gender).lower() == "male" else "Hair_Female"
+    mat = bpy.data.materials.get(per_gender_mat_name)
+    if mat is None:
+        template = bpy.data.materials.get("Hair Black")
+        mat = template.copy() if template is not None else bpy.data.materials.new(per_gender_mat_name)
+        mat.name = per_gender_mat_name
+        if not mat.use_nodes:
+            mat.use_nodes = True
+
+    if mat.node_tree:
+        for node in mat.node_tree.nodes:
+            if node.type == "BSDF_PRINCIPLED":
+                node.inputs["Base Color"].default_value = rgba
+                break
+
+    # Make sure the hair object actually USES this gender-specific material —
+    # both on its data slot and on the GBH Set Material modifier.
+    data = hair_obj.data
+    if len(data.materials) == 0:
+        data.materials.append(mat)
+    else:
+        data.materials[0] = mat
+    set_mat_mod = hair_obj.modifiers.get("GBH Set Material")
+    if set_mat_mod is not None and set_mat_mod.node_group is not None:
+        for item in set_mat_mod.node_group.interface.items_tree:
+            if item.item_type == "SOCKET" and item.in_out == "INPUT" and item.name == "Material":
+                set_mat_mod[item.identifier] = mat
+                break
 
     hair_obj.update_tag()
     bpy.context.view_layer.update()
@@ -879,6 +943,30 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
             print("\n--- Analyzing Hair from Prompt ---")
             hair_analysis = hair_analyzer.analyze_hair_prompt(original_prompt)
             print(f"Analysis: {hair_analysis}")
+
+        # Fallback color detection: hair_generator only matches phrases like
+        # "black hair", missing "black braids" / "blonde curls". If color is
+        # still None and the prompt mentions any hair-related word, look for
+        # a bare color word. Use word boundaries on BOTH sides so "afro"
+        # doesn't accidentally match "african".
+        if hair_analysis is not None and not hair_analysis.get("color") and original_prompt:
+            import re as _re
+            p = original_prompt.lower()
+            hair_keywords = (
+                "hair", "braid", "braids", "curl", "curls", "lock", "locks",
+                "dread", "dreads", "bun", "buns", "ponytail", "ponytails",
+                "afro", "bob", "pixie", "fringe", "bangs", "wig",
+            )
+            hair_context = any(
+                _re.search(r"\b" + _re.escape(w) + r"\b", p)
+                for w in hair_keywords
+            )
+            if hair_context:
+                for color_name in HAIR_COLOR_PALETTE.keys():
+                    if _re.search(r"\b" + _re.escape(color_name) + r"\b", p):
+                        hair_analysis["color"] = color_name
+                        print(f"Hair color fallback: {color_name}")
+                        break
 
         print("\n--- Applying hair style to authored hair ---")
         hair_result = apply_authored_hair_style(character_obj, gender, hair_analysis)
