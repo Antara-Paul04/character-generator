@@ -417,24 +417,72 @@ def import_clothing_from_blend(blend_path, asset_name):
     return None
 
 
-def fit_with_charmorph(character_obj, asset_obj):
-    """Use CharMorph's fitting system to fit an asset to the character"""
+def fit_with_charmorph_and_move(character_obj, asset_obj):
+    """
+    Use CharMorph to fit the clothing shape (it always fits to female),
+    then move the fitted clothing to the correct character's position.
+    """
     try:
+        female_obj = None
+        for obj in bpy.data.objects:
+            if obj.type == 'MESH' and 'mb_female' in obj.name.lower():
+                female_obj = obj
+                break
+
+        fit_target = female_obj if female_obj else character_obj
+        bpy.ops.object.select_all(action='DESELECT')
+        fit_target.select_set(True)
+        bpy.context.view_layer.objects.active = fit_target
+
+        # Force CharMorph to rebuild its morpher (and Fitter) for the *current*
+        # morphed shape. Without this, the cached `diff_arr` from when shape
+        # keys were at zero is reused, and clothing gets fitted to the base
+        # body — making oversized characters look naked-with-tiny-clothes.
+        try:
+            import importlib
+            cm_common = importlib.import_module("CharMorph.common")
+            mm = cm_common.manager
+            mm.del_charmorphs()
+            mm.create_charmorphs(fit_target)
+            log_to_file(f"    Refreshed CharMorph morpher for {fit_target.name}")
+        except Exception as e:
+            log_to_file(f"    Warning: could not refresh morpher: {e}")
+
         ui = bpy.context.window_manager.charmorph_ui
-        ui.fitting_char = character_obj
+        ui.fitting_char = fit_target
         ui.fitting_asset = asset_obj
         ui.fitting_transforms = True
+
         result = bpy.ops.charmorph.fit_local()
         log_to_file(f"    CharMorph fit result: {result}")
-        return result == {'FINISHED'}
+
+        if result != {'FINISHED'}:
+            return False
+
+        if character_obj != fit_target:
+            log_to_file(f"    Moving clothing from {fit_target.name} to {character_obj.name}")
+            offset = character_obj.location - fit_target.location
+            world_matrix = asset_obj.matrix_world.copy()
+            asset_obj.parent = None
+            asset_obj.matrix_world = world_matrix
+            asset_obj.location += offset
+            asset_obj.parent = character_obj
+            asset_obj.matrix_parent_inverse = character_obj.matrix_world.inverted()
+        else:
+            if not asset_obj.parent:
+                asset_obj.parent = character_obj
+                asset_obj.matrix_parent_inverse = character_obj.matrix_world.inverted()
+
+        return True
     except Exception as e:
         log_to_file(f"    CharMorph fit failed: {e}")
+        log_to_file(traceback.format_exc())
         return False
 
 
 def generate_clothing_piece(character_obj, clothing_type, color="white", gender="female"):
     """
-    Generate a clothing piece using CharMorph fitting with original CharMorph assets.
+    Generate a clothing piece: import, fit with CharMorph, move to correct character, color.
     """
     log_to_file(f"  Creating {clothing_type} ({color}) for {gender}...")
 
@@ -455,8 +503,8 @@ def generate_clothing_piece(character_obj, clothing_type, color="white", gender=
 
     log_to_file(f"    Imported clothing: {asset_obj.name}")
 
-    # Fit using CharMorph (works with CharMorph-native assets)
-    fitted = fit_with_charmorph(character_obj, asset_obj)
+    # Fit using CharMorph (fits to female shape), then move to correct character
+    fitted = fit_with_charmorph_and_move(character_obj, asset_obj)
 
     if not fitted:
         log_to_file(f"    WARNING: CharMorph fitting failed")
@@ -468,13 +516,24 @@ def generate_clothing_piece(character_obj, clothing_type, color="white", gender=
     return asset_obj
 
 
-def remove_existing_clothing():
-    """Remove any previously generated/fitted clothing objects"""
+def remove_existing_clothing(character_obj=None):
+    """Remove every previously fitted/generated clothing item in the scene.
+
+    Catches anything that was created by CharMorph fitting or this bridge's
+    own clothing pipeline, regardless of parenting — clothing that ends up
+    parented to an armature or to a different character instance otherwise
+    survives between generations and shows up oversized on the new body.
+    """
     to_remove = []
     for obj in bpy.data.objects:
-        if obj.type == 'MESH' and 'charmorph_fit_id' in obj.data:
-            to_remove.append(obj)
-        elif obj.name.startswith("Clothing_"):
+        if obj.type != 'MESH':
+            continue
+        is_fitted = 'charmorph_fit_id' in obj.data
+        is_clothing = obj.name.startswith("Clothing_")
+        # Heuristic: any mesh whose name matches CharMorph asset patterns
+        # (e.g. "casualsuit01_top", "RGF.crop.top.shirt") that's not the
+        # character body itself is treated as stale clothing.
+        if is_fitted or is_clothing:
             to_remove.append(obj)
 
     for obj in to_remove:
@@ -496,8 +555,8 @@ def apply_clothing_from_analysis(character_obj, clothing_data, gender="female"):
     log_to_file(f"GENERATING CLOTHING ({len(clothing_data['items'])} items)")
     log_to_file(f"{'='*60}")
 
-    # Remove old clothing
-    remove_existing_clothing()
+    # Remove old clothing for this character only
+    remove_existing_clothing(character_obj)
 
     results = []
     for item in clothing_data["items"]:
@@ -548,6 +607,152 @@ def apply_hair_from_analysis(character_obj, hair_analysis):
         print(f"✗ Hair generation error: {e}")
         traceback.print_exc()
         return {"success": False, "reason": str(e), "hair_generated": False}
+
+
+SKIN_TONE_RGBA = {
+    "very_dark":   (0.12, 0.06, 0.04, 1.0),
+    "dark":        (0.22, 0.12, 0.08, 1.0),
+    "medium_dark": (0.45, 0.27, 0.18, 1.0),
+    "medium":      (0.70, 0.48, 0.34, 1.0),
+    "light":       (0.90, 0.70, 0.55, 1.0),
+    "pale":        (0.95, 0.82, 0.72, 1.0),
+}
+
+EYE_COLOR_RGBA = {
+    "blue":   (0.05, 0.20, 0.65, 1.0),
+    "green":  (0.08, 0.45, 0.18, 1.0),
+    "brown":  (0.18, 0.08, 0.03, 1.0),
+    "hazel":  (0.30, 0.20, 0.08, 1.0),
+    "gray":   (0.45, 0.45, 0.45, 1.0),
+    "amber":  (0.60, 0.30, 0.05, 1.0),
+    "violet": (0.30, 0.10, 0.45, 1.0),
+}
+
+
+def apply_appearance_colors(character_obj, appearance):
+    """Update the skin_color and eyes_color RGB nodes on the character's
+    CharMorph materials based on detected skin/eye tones."""
+    if not appearance:
+        return {"skin": None, "eye": None}
+
+    skin_tone = appearance.get("skin")
+    eye_tone = appearance.get("eye")
+    skin_rgba = SKIN_TONE_RGBA.get(skin_tone) if skin_tone else None
+    eye_rgba = EYE_COLOR_RGBA.get(eye_tone) if eye_tone else None
+
+    applied = {"skin": None, "eye": None}
+    for slot in character_obj.material_slots:
+        m = slot.material
+        if m is None or not m.use_nodes:
+            continue
+        name_lower = m.name.lower()
+        if skin_rgba and "skin" in name_lower:
+            for node in m.node_tree.nodes:
+                if node.type == "RGB" and (node.label.lower() == "skin color" or node.name == "skin_color"):
+                    node.outputs[0].default_value = skin_rgba
+                    applied["skin"] = skin_tone
+                    break
+        if eye_rgba and "iris" in name_lower:
+            for node in m.node_tree.nodes:
+                if node.type == "RGB" and (node.label.lower() == "eyes color" or node.name == "eyes_color"):
+                    node.outputs[0].default_value = eye_rgba
+                    applied["eye"] = eye_tone
+                    break
+    return applied
+
+
+def ensure_default_innerwear(clothing_data, gender):
+    """If no clothing was requested, inject minimal underwear so the body
+    isn't fully naked."""
+    items = clothing_data.get("items", []) if clothing_data else []
+    if items:
+        return clothing_data  # user requested something — leave it
+
+    if str(gender).lower() == "male":
+        items = [{"type": "shorts", "color": "black"}]
+    else:
+        items = [{"type": "thong", "color": "white"}]
+    return {"items": items}
+
+
+HAIR_COLOR_PALETTE = {
+    "black":  (0.005, 0.005, 0.005, 1.0),
+    "brown":  (0.06,  0.025, 0.01,  1.0),
+    "blonde": (0.7,   0.5,   0.2,   1.0),
+    "blond":  (0.7,   0.5,   0.2,   1.0),
+    "red":    (0.4,   0.05,  0.02,  1.0),
+    "ginger": (0.5,   0.15,  0.05,  1.0),
+    "auburn": (0.25,  0.06,  0.02,  1.0),
+    "gray":   (0.5,   0.5,   0.5,   1.0),
+    "grey":   (0.5,   0.5,   0.5,   1.0),
+    "silver": (0.7,   0.7,   0.72,  1.0),
+    "white":  (0.9,   0.9,   0.9,   1.0),
+    "blue":   (0.05,  0.1,   0.6,   1.0),
+    "pink":   (0.9,   0.4,   0.6,   1.0),
+    "purple": (0.3,   0.05,  0.5,   1.0),
+    "green":  (0.05,  0.4,   0.1,   1.0),
+}
+
+BRAIDED_STYLES = ("braid", "corn", "twist", "lock", "dread")
+STRAIGHT_STYLES = ("straight", "sleek", "pixie", "buzz", "short", "bob", "crew")
+CURLY_STYLES = ("curl", "wavy", "wave", "kinky", "afro", "fluffy", "fuzzy")
+
+
+def apply_authored_hair_style(character_obj, gender, hair_analysis):
+    """Tweak the authored hair object (Curves / MaleHair) based on prompt analysis.
+
+    Does NOT create new hair — only flips modifier visibility and updates the
+    hair material's base color. The guide curves the user drew stay intact.
+    """
+    if not hair_analysis:
+        return {"success": True, "hair_generated": False, "reason": "no_analysis"}
+
+    target_name = "MaleHair" if str(gender).lower() == "male" else "Curves"
+    hair_obj = bpy.data.objects.get(target_name)
+    if hair_obj is None:
+        return {"success": False, "reason": f"no_hair_object:{target_name}"}
+
+    # Bald → hide the hair entirely
+    if not hair_analysis.get("has_hair", True):
+        hair_obj.hide_viewport = True
+        hair_obj.hide_render = True
+        return {"success": True, "hair_generated": False, "reason": "bald", "hidden": True}
+
+    hair_obj.hide_viewport = False
+    hair_obj.hide_render = False
+
+    style = (hair_analysis.get("style") or "").lower()
+    color = (hair_analysis.get("color") or "").lower()
+
+    braids_mod = hair_obj.modifiers.get("GBH Braids")
+    if braids_mod is not None:
+        if any(k in style for k in BRAIDED_STYLES):
+            braids_mod.show_viewport = True
+            braids_mod.show_render = True
+        elif any(k in style for k in STRAIGHT_STYLES) or any(k in style for k in CURLY_STYLES):
+            braids_mod.show_viewport = False
+            braids_mod.show_render = False
+        # else: leave braids in whatever the authored .blend has
+
+    rgba = HAIR_COLOR_PALETTE.get(color)
+    if rgba is not None:
+        mat = bpy.data.materials.get("Hair Black")
+        if mat and mat.node_tree:
+            for node in mat.node_tree.nodes:
+                if node.type == "BSDF_PRINCIPLED":
+                    node.inputs["Base Color"].default_value = rgba
+                    break
+
+    hair_obj.update_tag()
+    bpy.context.view_layer.update()
+
+    return {
+        "success": True,
+        "hair_generated": True,
+        "style_applied": style or "default",
+        "color_applied": color or "default",
+        "braids": braids_mod.show_viewport if braids_mod else None,
+    }
 
 # =============================================================================
 # BLENDER HELPER FUNCTIONS (ENHANCED)
@@ -643,6 +848,11 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
     }
     
     try:
+        # Step 0: Clear any clothing from a previous generation so the new
+        # character isn't wearing stale, un-fitted items.
+        print(f"\n--- Clearing previous clothing for {character_obj.name} ---")
+        remove_existing_clothing(character_obj)
+
         # Step 1: Reset and apply morphs
         print(f"\n--- Starting Morph Application for {gender.upper()} ---")
         reset_character_shape_keys(character_obj)
@@ -660,30 +870,33 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
         bpy.context.view_layer.update()
         print(f"✓ Applied {results['morphs_applied']} morphs, {results['morphs_failed']} failed")
         
-        # Step 2: Generate hair
+        # Step 2: Apply hair style based on prompt — tweaks the authored
+        # Curves/MaleHair (toggles GBH Braids, updates color), never creates
+        # new hair geometry.
         original_prompt = structured_data.get("prompt", "")
         hair_analysis = structured_data.get("hair_analysis", {})
-        
-        # If hair_analysis not in structured_data, analyze from prompt
         if not hair_analysis and original_prompt and HAIR_SUPPORT:
             print("\n--- Analyzing Hair from Prompt ---")
             hair_analysis = hair_analyzer.analyze_hair_prompt(original_prompt)
             print(f"Analysis: {hair_analysis}")
-        
-        if hair_analysis:
-            print("\n--- Generating Hair ---")
-            hair_result = apply_hair_from_analysis(character_obj, hair_analysis)
-            results["hair_result"] = hair_result
-            
-            if hair_result.get("success"):
-                print(f"✓ Hair generation successful: {hair_result.get('style', 'unknown')}")
-            else:
-                print(f"⚠️ Hair generation issue: {hair_result.get('reason', 'unknown')}")
-        else:
-            print("\n--- No hair analysis available ---")
 
-        # Step 3: Generate clothing
-        clothing_data = structured_data.get("clothing", {})
+        print("\n--- Applying hair style to authored hair ---")
+        hair_result = apply_authored_hair_style(character_obj, gender, hair_analysis)
+        results["hair_result"] = hair_result
+        print(f"Hair result: {hair_result}")
+
+        # Step 2.5: Skin / eye color from prompt
+        appearance = structured_data.get("appearance", {})
+        if appearance:
+            applied = apply_appearance_colors(character_obj, appearance)
+            print(f"Appearance applied: {applied}")
+            results["appearance_result"] = applied
+
+        # Step 3: Generate clothing — inject default underwear when prompt
+        # didn't ask for any clothing
+        clothing_data = ensure_default_innerwear(
+            structured_data.get("clothing", {}), gender
+        )
         log_to_file(f"Clothing data received: {clothing_data}")
         if clothing_data and clothing_data.get("items"):
             log_to_file(f"Generating Clothing ({len(clothing_data['items'])} items)")

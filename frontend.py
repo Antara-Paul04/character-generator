@@ -96,8 +96,8 @@ class CharacterPropertyAnalyzer:
             # Body type features
             'muscular_body': ['muscular', 'athletic', 'toned', 'fit', 'built', 'ripped', 'strong'],
             'slim_body': ['slim', 'thin', 'lean', 'slender', 'willowy', 'skinny'],
-            'large_body': ['large', 'big', 'heavy', 'stocky', 'burly', 'husky', 'wide belly', 'big belly', 'overweight'],
-            'curvy_body': ['curvy', 'hourglass', 'voluptuous', 'full figured'],
+            'large_body': ['large', 'big', 'heavy', 'stocky', 'burly', 'husky', 'wide belly', 'big belly', 'overweight', 'fat', 'obese'],
+            'curvy_body': ['curvy', 'hourglass', 'voluptuous', 'full figured', 'wide hips', 'thick hips'],
             'tall': ['tall', 'height', 'towering'],
             'short': ['short', 'small stature', 'petite', 'compact'],
             'average_height': ['average height', 'medium height', 'normal height'],
@@ -105,7 +105,7 @@ class CharacterPropertyAnalyzer:
             # Explicit Tone and Mass Keywords
             'very_toned': ['very toned', 'defined muscle', 'high tone', 'sculpted', 'low fat', 'chiseled body', 'six pack', 'abs'],
             'low_tone': ['flabby', 'soft body', 'low muscle tone', 'out of shape', 'untrained body', 'saggy'],
-            'high_mass': ['chubby', 'heavy build', 'high fat', 'plump', 'full figured', 'rotund', 'portly'],
+            'high_mass': ['chubby', 'heavy build', 'high fat', 'plump', 'full figured', 'rotund', 'portly', 'fat', 'obese', 'thick'],
             'low_mass': ['skinny', 'underweight', 'gaunt', 'bony', 'emaciated'],
             
             # Age features
@@ -214,7 +214,8 @@ class CharacterPropertyAnalyzer:
             ],
             'large_body': [
                 'L2__Body_Size_max', 'L2__Stomach_LocalFat_max', 'L2__Abdomen_Mass-Tone_max-max',
-                'L2__Torso_Mass-Tone_max-min', 'L2__Waist_Size_max', 'L2__Chest_Girth_max'
+                'L2__Torso_Mass-Tone_max-min', 'L2__Waist_Size_max', 'L2__Chest_Girth_max',
+                'L2__Pelvis_Girth_max', 'L2__Legs_UpperlegsMass-UpperlegsTone_max-min'
             ],
             'curvy_body': [
                 'L2__Pelvis_Girth_max', 'L2__Chest_SizeZ_max', 'L2__Waist_Size_min',
@@ -240,9 +241,11 @@ class CharacterPropertyAnalyzer:
                 'L2__Torso_Mass-Tone_min-min'
             ],
             'high_mass': [
-                'L2__Body_Size_max', 'L2__Stomach_LocalFat_max', 
+                'L2__Body_Size_max', 'L2__Stomach_LocalFat_max',
                 'L2__Torso_Mass-Tone_max-min', 'L2__Abdomen_Mass-Tone_max-max',
-                'L2__Pelvis_GluteusMass-GluteusTone_max-min'
+                'L2__Pelvis_GluteusMass-GluteusTone_max-min',
+                'L2__Pelvis_Girth_max', 'L2__Waist_Size_max',
+                'L2__Legs_UpperlegsMass-UpperlegsTone_max-min'
             ],
             'low_mass': [
                 'L2__Body_Size_min', 'L2__Hands_Mass-Tone_min-min',
@@ -582,8 +585,8 @@ REQUEST_FILE = os.path.join(COMMUNICATION_DIR, "character_request.json")
 RESPONSE_FILE = os.path.join(COMMUNICATION_DIR, "character_response.json")
 BLENDER_STATUS_FILE = os.path.join(COMMUNICATION_DIR, "blender_status.json")
 
-BLENDER_EXECUTABLE = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
-MODEL_BLEND_FILE = os.path.join(os.getcwd(), "base.blend")
+BLENDER_EXECUTABLE = r"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
+MODEL_BLEND_FILE = os.path.join(os.getcwd(), "char_template.blend")
 BRIDGE_SCRIPT_PATH = os.path.join(os.getcwd(), "blender_bridge.py")
 
 blender_started_once = False
@@ -654,8 +657,24 @@ def start_blender_with_model():
 import bpy
 import sys
 import os
+import addon_utils
 
 sys.path.append(r"{os.getcwd()}")
+
+# Force-enable required addons. Don't rely on user preferences — CharMorph
+# silently swallows a register error and ends up "checked but dead", and the
+# MCP addon's server has to be started even after enable.
+for addon_name in ("CharMorph",):
+    try:
+        addon_utils.enable(addon_name, default_set=True, persistent=True)
+        print(f"=== Enabled addon: {{addon_name}} ===")
+    except Exception as e:
+        print(f"=== Failed to enable {{addon_name}}: {{e}} ===")
+
+# Sanity check the property the bridge depends on
+ok = hasattr(bpy.context.window_manager, "charmorph_ui")
+print(f"=== charmorph_ui registered: {{ok}} ===")
+
 exec(open(r"{BRIDGE_SCRIPT_PATH}").read())
 start_bridge_monitoring()
 print("=== BLENDER BRIDGE AUTO-STARTED ===")
@@ -769,6 +788,66 @@ COLOR_KEYWORDS = [
     "white", "black", "red", "blue", "green", "gray", "grey", "brown",
     "navy", "beige", "pink", "yellow", "purple", "orange",
 ]
+
+
+SKIN_TONE_KEYWORDS = {
+    "very_dark":   ["very dark skin", "ebony skin", "deep black skin", "very dark complexion"],
+    "dark":        ["dark skin", "black skin", "ebony", "dark complexion", "deep brown skin"],
+    "medium_dark": ["tan", "tanned skin", "olive skin", "brown skin", "medium dark skin"],
+    "medium":      ["medium skin", "warm skin", "tan complexion"],
+    "light":       ["light skin", "fair skin", "fair complexion", "light complexion"],
+    "pale":        ["pale skin", "very pale", "porcelain skin", "white skin"],
+}
+
+EYE_COLOR_KEYWORDS = {
+    "blue":   ["blue eyes",  "blue-eyed",   "sapphire eyes"],
+    "green":  ["green eyes", "green-eyed",  "emerald eyes"],
+    "brown":  ["brown eyes", "brown-eyed",  "dark eyes"],
+    "hazel":  ["hazel eyes"],
+    "gray":   ["gray eyes",  "grey eyes",   "silver eyes"],
+    "amber":  ["amber eyes", "golden eyes"],
+    "violet": ["violet eyes", "purple eyes"],
+}
+
+# Ethnicity → implied skin tone (used only if no explicit skin keyword found)
+ETHNICITY_SKIN_DEFAULT = {
+    "african":        "dark",
+    "south_asian":    "medium_dark",
+    "latino":         "medium",
+    "latin":          "medium",
+    "middle_eastern": "medium",
+    "asian":          "light",
+    "caucasian":      "light",
+    "elf":            "pale",
+    "dwarf":          "medium",
+    "anime":          "light",
+}
+
+
+def analyze_appearance_from_prompt(prompt, ethnicity=None):
+    """Detect skin tone, eye color, lip color from the prompt.
+
+    Returns a dict like {"skin": "dark", "eye": "blue", "lip": None}.
+    Falls back to ethnicity-implied skin tone when no explicit skin keyword
+    is in the prompt.
+    """
+    p = prompt.lower()
+
+    skin = None
+    for tone, kws in SKIN_TONE_KEYWORDS.items():
+        if any(k in p for k in kws):
+            skin = tone
+            break
+    if skin is None and ethnicity:
+        skin = ETHNICITY_SKIN_DEFAULT.get(ethnicity)
+
+    eye = None
+    for tone, kws in EYE_COLOR_KEYWORDS.items():
+        if any(k in p for k in kws):
+            eye = tone
+            break
+
+    return {"skin": skin, "eye": eye}
 
 
 def analyze_clothing_from_prompt(prompt):
@@ -1096,6 +1175,10 @@ def generate_character():
 
         clothing_data = {"items": merged_items}
 
+        # Step 3.5c: Appearance colors (skin / eye)
+        appearance = analyze_appearance_from_prompt(user_prompt, detected_ethnicity)
+        print(f"🎨 Appearance: skin={appearance['skin']}, eye={appearance['eye']}")
+
         if merged_items:
             print(f"✓ Clothing items: {len(merged_items)}")
             for item in merged_items:
@@ -1139,7 +1222,8 @@ def generate_character():
             "property_count": len(final_properties),
             "features_detected": list(nlp_features.keys()),
             "hair_analysis": hair_analysis,  # Add hair analysis
-            "clothing": clothing_data  # Add clothing data
+            "clothing": clothing_data,  # Add clothing data
+            "appearance": appearance,  # Skin / eye color from prompt
         }
         
         # Create request for Blender
