@@ -171,19 +171,35 @@ class CharacterPropertyAnalyzer:
                 'L2_Anime_Nose_SizeY_min', 'L2_Elf_Nose_SizeY_min', 'L2_Dwarf_Nose_SizeY_min'
             ],
             
-            # Lips - all cultural variants
+            # Lips - drive Volume + SizeZ (thickness) + Ext (protrusion)
+            # together. Volume alone barely moves on MB-Lab; combining with
+            # SizeZ and Ext makes "thick lips" actually look thick.
             'full_lips': [
                 'L2_Caucasian_Mouth_UpperlipVolume_max', 'L2_Caucasian_Mouth_LowerlipVolume_max',
-                'L2_Asian_Mouth_UpperlipVolume_max', 'L2_Asian_Mouth_LowerlipVolume_max',
-                'L2_African_Mouth_UpperlipVolume_max', 'L2_African_Mouth_LowerlipVolume_max',
-                'L2_Anime_Mouth_UpperlipVolume_max', 'L2_Anime_Mouth_LowerlipVolume_max',
-                'L2_Elf_Mouth_UpperlipVolume_max', 'L2_Elf_Mouth_LowerlipVolume_max'
+                'L2_Caucasian_Mouth_UpperlipSizeZ_max',  'L2_Caucasian_Mouth_LowerlipSizeZ_max',
+                'L2_Caucasian_Mouth_UpperlipExt_max',    'L2_Caucasian_Mouth_LowerlipExt_max',
+                'L2_Asian_Mouth_UpperlipVolume_max',     'L2_Asian_Mouth_LowerlipVolume_max',
+                'L2_Asian_Mouth_UpperlipSizeZ_max',      'L2_Asian_Mouth_LowerlipSizeZ_max',
+                'L2_Asian_Mouth_UpperlipExt_max',        'L2_Asian_Mouth_LowerlipExt_max',
+                'L2_African_Mouth_UpperlipVolume_max',   'L2_African_Mouth_LowerlipVolume_max',
+                'L2_African_Mouth_UpperlipSizeZ_max',    'L2_African_Mouth_LowerlipSizeZ_max',
+                'L2_African_Mouth_UpperlipExt_max',      'L2_African_Mouth_LowerlipExt_max',
+                'L2_Anime_Mouth_UpperlipVolume_max',     'L2_Anime_Mouth_LowerlipVolume_max',
+                'L2_Anime_Mouth_UpperlipSizeZ_max',      'L2_Anime_Mouth_LowerlipSizeZ_max',
+                'L2_Elf_Mouth_UpperlipVolume_max',       'L2_Elf_Mouth_LowerlipVolume_max',
             ],
             'thin_lips': [
                 'L2_Caucasian_Mouth_UpperlipVolume_min', 'L2_Caucasian_Mouth_LowerlipVolume_min',
-                'L2_Asian_Mouth_UpperlipVolume_min', 'L2_Asian_Mouth_LowerlipVolume_min',
-                'L2_African_Mouth_UpperlipVolume_min', 'L2_African_Mouth_LowerlipVolume_min',
-                'L2_Anime_Mouth_UpperlipVolume_min', 'L2_Anime_Mouth_LowerlipVolume_min'
+                'L2_Caucasian_Mouth_UpperlipSizeZ_min',  'L2_Caucasian_Mouth_LowerlipSizeZ_min',
+                'L2_Caucasian_Mouth_UpperlipExt_min',    'L2_Caucasian_Mouth_LowerlipExt_min',
+                'L2_Asian_Mouth_UpperlipVolume_min',     'L2_Asian_Mouth_LowerlipVolume_min',
+                'L2_Asian_Mouth_UpperlipSizeZ_min',      'L2_Asian_Mouth_LowerlipSizeZ_min',
+                'L2_Asian_Mouth_UpperlipExt_min',        'L2_Asian_Mouth_LowerlipExt_min',
+                'L2_African_Mouth_UpperlipVolume_min',   'L2_African_Mouth_LowerlipVolume_min',
+                'L2_African_Mouth_UpperlipSizeZ_min',    'L2_African_Mouth_LowerlipSizeZ_min',
+                'L2_African_Mouth_UpperlipExt_min',      'L2_African_Mouth_LowerlipExt_min',
+                'L2_Anime_Mouth_UpperlipVolume_min',     'L2_Anime_Mouth_LowerlipVolume_min',
+                'L2_Anime_Mouth_UpperlipSizeZ_min',      'L2_Anime_Mouth_LowerlipSizeZ_min',
             ],
             
             # Jaw and chin - comprehensive
@@ -290,15 +306,17 @@ class CharacterPropertyAnalyzer:
         }
         
         # Default properties to ensure minimum 30 properties
+        # NOTE: Padding to "minimum 30 properties" used to add Body_Size,
+        # Torso_Length, Legs_UpperlegLength, Arms_UpperarmLength here. MB-Lab's
+        # _max / _min morph pairs are NOT symmetric around basis, so setting
+        # both to 0.5 doesn't cancel — the character drifted taller and
+        # bigger even from a prompt like "long nose". Keeping the default
+        # list narrow to head/eye/hand/foot proportions only, where drift is
+        # less perceptible than overall body height.
         self.default_properties = [
             'L2__Head_Size_max', 'L2__Head_Size_min',
-            'L2__Body_Size_max', 'L2__Body_Size_min',
-            'L2__Eyes_Size_max', 'L2__Eyes_Size_min',
-            'L2__Torso_Length_max', 'L2__Torso_Length_min',
-            'L2__Legs_UpperlegLength_max', 'L2__Legs_UpperlegLength_min',
-            'L2__Arms_UpperarmLength_max', 'L2__Arms_UpperarmLength_min',
             'L2__Hands_Size_max', 'L2__Hands_Size_min',
-            'L2__Feet_Size_max', 'L2__Feet_Size_min'
+            'L2__Feet_Size_max', 'L2__Feet_Size_min',
         ]
         
         self.intensity_modifiers = {
@@ -438,95 +456,147 @@ class CharacterPropertyAnalyzer:
         print(f"✓ Enhanced to {len(property_values)} properties")
         return property_values
 
+    # Body-type / size features whose bare-word keywords ("thin", "big",
+    # "long", …) must NOT match when they're modifying a face / feature
+    # noun. Without this guard, "thin lips" lights up slim_body, "long
+    # nose" lights up tall, etc.
+    _BODY_TYPE_FEATURES = {
+        'muscular_body', 'slim_body', 'large_body', 'curvy_body',
+        'tall', 'short', 'average_height',
+        'very_toned', 'low_tone', 'high_mass', 'low_mass',
+    }
+    _FACE_OR_FEATURE_NOUNS = (
+        "lip", "lips", "nose", "eye", "eyes", "ear", "ears",
+        "jaw", "chin", "neck", "face", "cheek", "cheeks", "forehead",
+        "brow", "brows", "mouth", "skin", "hair",
+        "hand", "hands", "foot", "feet", "finger", "fingers",
+        "shoulder", "shoulders", "tooth", "teeth",
+    )
+
+    def _keyword_pattern(self, keyword, feature):
+        """Word-boundary regex for a keyword. For body-type features, also
+        refuses to match when the keyword is immediately followed by a
+        face/feature noun (so 'thin lips' won't match the bare 'thin' under
+        slim_body)."""
+        import re as _re
+        pat = r"\b" + _re.escape(keyword) + r"\b"
+        if feature in self._BODY_TYPE_FEATURES:
+            pat += r"(?!\s+(?:" + "|".join(self._FACE_OR_FEATURE_NOUNS) + r")\b)"
+        return pat
+
     def analyze_prompt_with_nlp(self, prompt):
         """Enhanced NLP analysis with better phrase matching"""
         if self.nlp is None:
             return self._simple_analysis(prompt)
-        
+
+        import re as _re
         features = {}
         prompt_lower = prompt.lower()
-        
+
         print("🔍 Starting enhanced NLP analysis...")
-        
+
         for feature, keywords in self.feature_keywords.items():
             best_intensity = 0.0
-            
+
             for keyword in sorted(keywords, key=len, reverse=True):
-                if keyword in prompt_lower:
+                pat = self._keyword_pattern(keyword, feature)
+                m = _re.search(pat, prompt_lower)
+                if m:
                     intensity = self.default_intensity
-                    match_index = prompt_lower.find(keyword)
-                    
+                    match_index = m.start()
+
                     for modifier, mod_intensity in self.intensity_modifiers.items():
                         modifier_phrase = f"{modifier} {keyword}"
                         if prompt_lower.find(modifier_phrase) == match_index - (len(modifier) + 1):
                             intensity = mod_intensity
                             break
-                    
+
                     best_intensity = max(best_intensity, intensity)
-            
+
             if best_intensity > 0.0:
                 features[feature] = best_intensity
-        
+
         return features
 
     def _simple_analysis(self, prompt):
         """Fallback analysis without spaCy"""
+        import re as _re
         prompt_lower = prompt.lower()
         features = {}
-        
+
         for feature, keywords in self.feature_keywords.items():
             for keyword in keywords:
-                if keyword in prompt_lower:
+                pat = self._keyword_pattern(keyword, feature)
+                if _re.search(pat, prompt_lower):
                     intensity = self.default_intensity
                     for modifier, mod_intensity in self.intensity_modifiers.items():
                         if f"{modifier} {keyword}" in prompt_lower:
                             intensity = mod_intensity
                             break
                     features[feature] = intensity
-        
+
         return features
+
+    # Per-feature intensity multipliers. Some MB-Lab morphs barely move at
+    # the default 0.65 (lip volume, eye size) so the user can't tell anything
+    # changed — boost those so an explicit "thin lips" / "big eyes" prompt
+    # actually reads on the model.
+    _FEATURE_INTENSITY_BOOST = {
+        'full_lips':  1.35,
+        'thin_lips':  1.35,
+        'big_eyes':   1.25,
+        'small_eyes': 1.25,
+        'wide_nose':  1.20,
+        'long_nose':  1.20,
+        'short_nose': 1.20,
+        'sharp_nose': 1.20,
+    }
 
     def map_to_properties(self, prompt):
         """Enhanced property mapping with gender and ethnicity detection"""
         # Detect gender and ethnicity
         gender, gender_confidence = self.detect_gender(prompt)
         ethnicity, ethnicity_confidence, ethnicity_source = self.detect_ethnicity(prompt)
-        
+
         print(f"🎭 Gender detected: {gender} (confidence: {gender_confidence})")
         print(f"🌍 Ethnicity detected: {ethnicity} (confidence: {ethnicity_confidence}, source: {ethnicity_source})")
-        
+
         # Analyze features
         features = self.analyze_prompt_with_nlp(prompt)
-        
+
         # Add gender and ethnicity to features
         features['gender'] = gender
         features['ethnicity'] = ethnicity
-        
+
         print(f"✓ NLP Analysis - Detected {len(features)} features: {list(features.keys())}")
-        
+
         property_values = {}
-        
+
         # Add ethnicity base property if available
         if ethnicity in self.ethnicity_base_map:
             base_property = self.ethnicity_base_map[ethnicity]
             if base_property in self.properties:
                 property_values[base_property] = 0.85
                 print(f"✓ Added ethnicity base: {base_property}")
-        
+
         # Map features to properties
         for feature, intensity in features.items():
             if feature in ['gender', 'ethnicity']:
                 continue
-            
+
             if feature in self.property_mapping:
                 properties = self.property_mapping[feature]
-                
+
                 # Filter properties based on detected ethnicity
                 filtered_properties = self.filter_properties_by_culture(properties, ethnicity)
-                
+
+                # Boost subtle features so the user can actually see the change
+                boost = self._FEATURE_INTENSITY_BOOST.get(feature, 1.0)
+                effective_intensity = max(0.0, min(1.0, intensity * boost))
+
                 for prop in filtered_properties:
                     if prop in self.properties:
-                        property_values[prop] = intensity
+                        property_values[prop] = effective_intensity
         
         # Ensure minimum 30 properties
         property_values = self.ensure_minimum_properties(property_values, features, ethnicity)
@@ -791,12 +861,31 @@ COLOR_KEYWORDS = [
 
 
 SKIN_TONE_KEYWORDS = {
-    "very_dark":   ["very dark skin", "ebony skin", "deep black skin", "very dark complexion"],
-    "dark":        ["dark skin", "black skin", "ebony", "dark complexion", "deep brown skin"],
-    "medium_dark": ["tan", "tanned skin", "olive skin", "brown skin", "medium dark skin"],
-    "medium":      ["medium skin", "warm skin", "tan complexion"],
+    # Order matters: detection takes the first tone whose keyword is a
+    # substring of the prompt, so the most-specific phrases must come first.
+    # E.g. "very dark skin" must be listed before "dark skin", and bare
+    # "ebony" sits under the ebony tone (not dark) so we don't get false
+    # positives from "ebony hair".
+
+    # Darkest
+    "ebony":       ["ebony skin", "jet black skin", "ebony-skinned", "ebony complexion"],
+    "very_dark":   ["very dark skin", "deep black skin", "very dark complexion", "deepest skin"],
+    "mahogany":    ["mahogany skin", "mahogany complexion", "rich brown skin", "deep brown skin"],
+    "dark":        ["dark skin", "black skin", "dark complexion", "dark-skinned"],
+
+    # Mid-tones with explicit undertones
+    "medium_dark": ["medium dark skin", "medium-dark skin", "brown skin", "deep tan"],
+    "caramel":     ["caramel skin", "caramel complexion", "honey skin", "honey-colored skin", "golden brown skin"],
+    "olive":       ["olive skin", "olive-toned", "olive complexion", "mediterranean skin"],
+    "bronzed":     ["bronzed skin", "sun-kissed skin", "sun kissed skin", "tanned skin", "tanned complexion"],
+    "medium":      ["medium skin", "warm skin", "tan complexion", "tan skin"],
+
+    # Lighter with undertones
+    "golden":      ["golden skin", "wheat skin", "wheat-colored skin", "warm light skin", "honey-toned"],
     "light":       ["light skin", "fair skin", "fair complexion", "light complexion"],
-    "pale":        ["pale skin", "very pale", "porcelain skin", "white skin"],
+    "rosy":        ["rosy skin", "rosy complexion", "peach skin", "peachy skin", "pink-toned skin"],
+    "pale":        ["pale skin", "very pale", "white skin", "pale complexion"],
+    "porcelain":   ["porcelain skin", "porcelain complexion", "ivory skin", "ivory complexion", "milky skin"],
 }
 
 EYE_COLOR_KEYWORDS = {
@@ -809,25 +898,40 @@ EYE_COLOR_KEYWORDS = {
     "violet": ["violet eyes", "purple eyes"],
 }
 
-# Ethnicity → implied skin tone (used only if no explicit skin keyword found)
+LIP_COLOR_KEYWORDS = {
+    # Always require the word "lip(s)" or "lipstick" so a bare colour from
+    # somewhere else in the prompt ("red dress") doesn't paint the lips.
+    "red":    ["red lips", "red lip", "ruby lips", "crimson lips", "red lipstick", "scarlet lips"],
+    "berry":  ["berry lips", "wine lips", "burgundy lips", "berry lipstick", "wine lipstick"],
+    "pink":   ["pink lips", "pink lip", "rose lips", "rosy lips", "pink lipstick"],
+    "coral":  ["coral lips", "peach lips", "coral lipstick"],
+    "nude":   ["nude lips", "natural lips", "nude lip", "nude lipstick"],
+    "purple": ["purple lips", "plum lips", "violet lips", "purple lipstick"],
+    "black":  ["black lips", "black lipstick", "goth lips"],
+    "brown":  ["brown lips", "chocolate lips", "brown lipstick"],
+}
+
+# Ethnicity → implied skin tone (used only if no explicit skin keyword found).
+# Picks specific undertone variants so an ethnicity-only prompt still produces
+# a richer-looking character instead of always landing on the same flat band.
 ETHNICITY_SKIN_DEFAULT = {
     "african":        "dark",
-    "south_asian":    "medium_dark",
-    "latino":         "medium",
-    "latin":          "medium",
-    "middle_eastern": "medium",
-    "asian":          "light",
+    "south_asian":    "caramel",
+    "latino":         "bronzed",
+    "latin":          "bronzed",
+    "middle_eastern": "olive",
+    "asian":          "golden",
     "caucasian":      "light",
-    "elf":            "pale",
-    "dwarf":          "medium",
-    "anime":          "light",
+    "elf":            "porcelain",
+    "dwarf":          "bronzed",
+    "anime":          "rosy",
 }
 
 
 def analyze_appearance_from_prompt(prompt, ethnicity=None):
     """Detect skin tone, eye color, lip color from the prompt.
 
-    Returns a dict like {"skin": "dark", "eye": "blue", "lip": None}.
+    Returns a dict like {"skin": "dark", "eye": "blue", "lip": "red"}.
     Falls back to ethnicity-implied skin tone when no explicit skin keyword
     is in the prompt.
     """
@@ -847,7 +951,13 @@ def analyze_appearance_from_prompt(prompt, ethnicity=None):
             eye = tone
             break
 
-    return {"skin": skin, "eye": eye}
+    lip = None
+    for tone, kws in LIP_COLOR_KEYWORDS.items():
+        if any(k in p for k in kws):
+            lip = tone
+            break
+
+    return {"skin": skin, "eye": eye, "lip": lip}
 
 
 def analyze_clothing_from_prompt(prompt):
@@ -1175,9 +1285,9 @@ def generate_character():
 
         clothing_data = {"items": merged_items}
 
-        # Step 3.5c: Appearance colors (skin / eye)
+        # Step 3.5c: Appearance colors (skin / eye / lip)
         appearance = analyze_appearance_from_prompt(user_prompt, detected_ethnicity)
-        print(f"🎨 Appearance: skin={appearance['skin']}, eye={appearance['eye']}")
+        print(f"🎨 Appearance: skin={appearance['skin']}, eye={appearance['eye']}, lip={appearance.get('lip')}")
 
         if merged_items:
             print(f"✓ Clothing items: {len(merged_items)}")

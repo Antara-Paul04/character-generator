@@ -443,9 +443,11 @@ def _charmorph_fit(target, asset):
     # imported at world origin — fine when the character is also at origin
     # (mb_female case), but when mb_male is offset (e.g. x=1.527), the binding
     # looks up asset verts at the wrong spot and the clothes both fit-fail
-    # AND end up rendered at the female's position. Pre-position the asset on
-    # top of the character before fitting.
-    asset.matrix_world = target.matrix_world.copy()
+    # AND end up rendered at the female's position. Only re-position when the
+    # target is actually offset, so the female code path stays a no-op.
+    target_t = target.matrix_world.translation
+    if target_t.length > 1e-4:
+        asset.matrix_world = target.matrix_world.copy()
 
     _refresh_charmorph_morpher(target)
 
@@ -647,12 +649,23 @@ def apply_hair_from_analysis(character_obj, hair_analysis):
 
 
 SKIN_TONE_RGBA = {
+    # Ordered darkest → lightest. Mid-band entries add warm/cool undertones
+    # so prompts like "olive skin" or "rosy complexion" produce a visibly
+    # different result from plain "medium" / "light".
+    "ebony":       (0.07, 0.04, 0.03, 1.0),
     "very_dark":   (0.12, 0.06, 0.04, 1.0),
+    "mahogany":    (0.20, 0.10, 0.07, 1.0),
     "dark":        (0.22, 0.12, 0.08, 1.0),
     "medium_dark": (0.45, 0.27, 0.18, 1.0),
+    "caramel":     (0.55, 0.35, 0.20, 1.0),
+    "olive":       (0.50, 0.38, 0.25, 1.0),
+    "bronzed":     (0.65, 0.42, 0.28, 1.0),
     "medium":      (0.70, 0.48, 0.34, 1.0),
+    "golden":      (0.82, 0.62, 0.42, 1.0),
     "light":       (0.90, 0.70, 0.55, 1.0),
+    "rosy":        (0.92, 0.74, 0.65, 1.0),
     "pale":        (0.95, 0.82, 0.72, 1.0),
+    "porcelain":   (0.97, 0.88, 0.80, 1.0),
 }
 
 EYE_COLOR_RGBA = {
@@ -665,36 +678,80 @@ EYE_COLOR_RGBA = {
     "violet": (0.30, 0.10, 0.45, 1.0),
 }
 
+LIP_COLOR_RGBA = {
+    "red":    (0.65, 0.10, 0.10, 1.0),
+    "berry":  (0.45, 0.08, 0.18, 1.0),
+    "pink":   (0.85, 0.42, 0.50, 1.0),
+    "coral":  (0.85, 0.45, 0.35, 1.0),
+    "nude":   (0.70, 0.45, 0.40, 1.0),
+    "purple": (0.40, 0.10, 0.40, 1.0),
+    "black":  (0.05, 0.03, 0.03, 1.0),
+    "brown":  (0.30, 0.15, 0.10, 1.0),
+}
+
 
 def apply_appearance_colors(character_obj, appearance):
-    """Update the skin_color and eyes_color RGB nodes on the character's
-    CharMorph materials based on detected skin/eye tones."""
+    """Update the skin_color, eyes_color, and lip color RGB nodes on the
+    character's CharMorph materials based on detected skin/eye/lip tones.
+
+    The lip RGB node usually lives *inside* the same skin material as
+    `lips_color` / `lip_color` (MB-Lab convention), not in a separate
+    material — so we walk every material's node tree and key off node
+    names/labels rather than just the material name.
+    """
     if not appearance:
-        return {"skin": None, "eye": None}
+        return {"skin": None, "eye": None, "lip": None}
 
     skin_tone = appearance.get("skin")
     eye_tone = appearance.get("eye")
+    lip_tone = appearance.get("lip")
     skin_rgba = SKIN_TONE_RGBA.get(skin_tone) if skin_tone else None
     eye_rgba = EYE_COLOR_RGBA.get(eye_tone) if eye_tone else None
+    lip_rgba = LIP_COLOR_RGBA.get(lip_tone) if lip_tone else None
 
-    applied = {"skin": None, "eye": None}
+    applied = {"skin": None, "eye": None, "lip": None}
+    rgb_nodes_seen = []  # for diagnostics when nothing gets applied
+
     for slot in character_obj.material_slots:
         m = slot.material
         if m is None or not m.use_nodes:
             continue
         name_lower = m.name.lower()
-        if skin_rgba and "skin" in name_lower:
-            for node in m.node_tree.nodes:
-                if node.type == "RGB" and (node.label.lower() == "skin color" or node.name == "skin_color"):
-                    node.outputs[0].default_value = skin_rgba
-                    applied["skin"] = skin_tone
-                    break
-        if eye_rgba and "iris" in name_lower:
-            for node in m.node_tree.nodes:
-                if node.type == "RGB" and (node.label.lower() == "eyes color" or node.name == "eyes_color"):
-                    node.outputs[0].default_value = eye_rgba
-                    applied["eye"] = eye_tone
-                    break
+
+        for node in m.node_tree.nodes:
+            if node.type != "RGB":
+                continue
+            label = (node.label or "").lower()
+            nname = (node.name or "").lower()
+            tag = label + "|" + nname
+            rgb_nodes_seen.append(f"{m.name}::{node.name}({label})")
+
+            if skin_rgba and applied["skin"] is None \
+                    and "skin" in name_lower \
+                    and ("skin" in tag and "color" in tag or nname == "skin_color"):
+                node.outputs[0].default_value = skin_rgba
+                applied["skin"] = skin_tone
+                continue
+
+            if eye_rgba and applied["eye"] is None \
+                    and "iris" in name_lower \
+                    and ("eye" in tag and "color" in tag or nname == "eyes_color"):
+                node.outputs[0].default_value = eye_rgba
+                applied["eye"] = eye_tone
+                continue
+
+            if lip_rgba and applied["lip"] is None \
+                    and ("lip" in tag or nname in ("lips_color", "lip_color")):
+                node.outputs[0].default_value = lip_rgba
+                applied["lip"] = lip_tone
+                continue
+
+    log_to_file(f"  Appearance applied: {applied} "
+                f"(requested: skin={skin_tone}, eye={eye_tone}, lip={lip_tone})")
+    if (skin_tone and applied["skin"] is None) \
+            or (eye_tone and applied["eye"] is None) \
+            or (lip_tone and applied["lip"] is None):
+        log_to_file(f"  RGB nodes available on {character_obj.name}: {rgb_nodes_seen[:20]}")
     return applied
 
 
@@ -948,7 +1005,9 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
         # "black hair", missing "black braids" / "blonde curls". If color is
         # still None and the prompt mentions any hair-related word, look for
         # a bare color word. Use word boundaries on BOTH sides so "afro"
-        # doesn't accidentally match "african".
+        # doesn't accidentally match "african". Also skip a colour that's
+        # immediately attached to a non-hair noun ("red lips", "red dress")
+        # — otherwise "woman with red lips" leaks "red" onto her hair.
         if hair_analysis is not None and not hair_analysis.get("color") and original_prompt:
             import re as _re
             p = original_prompt.lower()
@@ -961,9 +1020,20 @@ def process_enhanced_properties(structured_data: Dict, character_obj, gender: st
                 _re.search(r"\b" + _re.escape(w) + r"\b", p)
                 for w in hair_keywords
             )
+            non_hair_nouns = (
+                "lip", "lips", "lipstick", "eye", "eyes", "eyeshadow",
+                "dress", "shirt", "tshirt", "t-shirt", "skirt", "pants",
+                "jeans", "trousers", "shorts", "jacket", "sweater", "coat",
+                "boots", "shoes", "gloves", "scarf", "hat", "bag", "skin",
+                "complexion", "nails",
+            )
             if hair_context:
                 for color_name in HAIR_COLOR_PALETTE.keys():
-                    if _re.search(r"\b" + _re.escape(color_name) + r"\b", p):
+                    pattern = (
+                        r"\b" + _re.escape(color_name)
+                        + r"\b(?!\s+(?:" + "|".join(non_hair_nouns) + r")\b)"
+                    )
+                    if _re.search(pattern, p):
                         hair_analysis["color"] = color_name
                         print(f"Hair color fallback: {color_name}")
                         break
